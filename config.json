@@ -17,11 +17,11 @@
     "timeout_comando": 30,
     "log_level": "INFO",
     "alertas": {
-        "limite_cpu": 80,
-        "limite_ram": 80,
-        "limite_disco": 85,
-        "limite_processo_cpu": 50,
-        "limite_processo_ram": 50,
+        "limites": {
+            "cpu": 80,
+            "ram": 80,
+            "disco": 85
+        },
         "intervalo_monitoramento": 60
     },
     "notificacoes": {
