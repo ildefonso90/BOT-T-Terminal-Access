@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.constants import ParseMode
+import threading
 
 # Configuração de logging
 logging.basicConfig(
@@ -350,39 +351,66 @@ async def cmd_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN_V2
         )
 
-async def executar_speedtest() -> str:
-    """Executa teste de velocidade"""
+def executar_speedtest():
+    """Executa um teste de velocidade"""
     try:
-        texto = "🚀 *Teste de Velocidade*\n\n"
-        texto += "⏳ Executando teste... (pode demorar alguns segundos)\n\n"
-        
-        # Instala speedtest-cli se não estiver instalado
-        await executar_comando("pip install speedtest-cli")
+        # Verifica se speedtest-cli está instalado
+        try:
+            import speedtest
+        except ImportError:
+            return "❌ Speedtest-cli não está instalado. Instale com:\n`pip install speedtest-cli`"
         
         # Executa o teste
-        resultado = await executar_comando("speedtest-cli --simple")
+        s = speedtest.Speedtest()
+        s.get_best_server()
+        s.download()
+        s.upload()
         
         # Formata o resultado
-        for linha in resultado.split('\n'):
-            if "Ping" in linha:
-                texto += f"📡 *Latência*: `{linha.split(':')[1].strip()}`\n"
-            elif "Download" in linha:
-                texto += f"⬇️ *Download*: `{linha.split(':')[1].strip()}`\n"
-            elif "Upload" in linha:
-                texto += f"⬆️ *Upload*: `{linha.split(':')[1].strip()}`\n"
+        resultado = s.results.dict()
+        
+        # Formata a mensagem
+        download = resultado["download"] / 1_000_000  # Mbps
+        upload = resultado["upload"] / 1_000_000  # Mbps
+        ping = resultado["ping"]
+        servidor = resultado["server"]["sponsor"]
+        cidade = resultado["server"]["name"]
+        
+        texto = (
+            "🚀 *Resultado do Speed Test*\n\n"
+            f"⬇️ *Download*: `{download:.2f} Mbps`\n"
+            f"⬆️ *Upload*: `{upload:.2f} Mbps`\n"
+            f"🔄 *Ping*: `{ping:.0f} ms`\n"
+            f"🌐 *Servidor*: `{servidor} ({cidade})`\n"
+        )
         
         return texto
     except Exception as e:
         return f"❌ Erro ao executar speedtest: {e}"
 
-async def monitorar_sistema(app: Application):
-    """Monitora o sistema e envia alertas"""
+# Função para monitoramento em background usando threads
+def monitorar_sistema_thread(app: Application):
+    """Função que roda em uma thread separada para monitorar o sistema"""
+    logger.info("Iniciando monitoramento do sistema em thread separada")
+    
+    def enviar_alerta_sync(mensagem: str):
+        """Versão síncrona da função de enviar alerta"""
+        try:
+            if IDS_AUTORIZADOS:
+                app.bot.send_message(
+                    chat_id=IDS_AUTORIZADOS[0],
+                    text=mensagem,
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+        except Exception as e:
+            logger.error(f"Erro ao enviar alerta: {e}")
+    
     while True:
         try:
             # CPU
             cpu_percent = psutil.cpu_percent(interval=1)
             if cpu_percent > LIMITE_CPU and not alertas_enviados["cpu"]:
-                await enviar_alerta(app, f"⚠️ *Alerta de CPU*\n\nUso de CPU está em {cpu_percent}%!")
+                enviar_alerta_sync(f"⚠️ *Alerta de CPU*\n\nUso de CPU está em {cpu_percent}%!")
                 alertas_enviados["cpu"] = True
             elif cpu_percent < LIMITE_CPU:
                 alertas_enviados["cpu"] = False
@@ -390,7 +418,7 @@ async def monitorar_sistema(app: Application):
             # Memória
             mem = psutil.virtual_memory()
             if mem.percent > LIMITE_RAM and not alertas_enviados["ram"]:
-                await enviar_alerta(app, f"⚠️ *Alerta de RAM*\n\nUso de RAM está em {mem.percent}%!")
+                enviar_alerta_sync(f"⚠️ *Alerta de RAM*\n\nUso de RAM está em {mem.percent}%!")
                 alertas_enviados["ram"] = True
             elif mem.percent < LIMITE_RAM:
                 alertas_enviados["ram"] = False
@@ -398,7 +426,7 @@ async def monitorar_sistema(app: Application):
             # Disco
             disk = psutil.disk_usage('/')
             if disk.percent > LIMITE_DISCO and not alertas_enviados["disco"]:
-                await enviar_alerta(app, f"⚠️ *Alerta de Disco*\n\nUso de disco está em {disk.percent}%!")
+                enviar_alerta_sync(f"⚠️ *Alerta de Disco*\n\nUso de disco está em {disk.percent}%!")
                 alertas_enviados["disco"] = True
             elif disk.percent < LIMITE_DISCO:
                 alertas_enviados["disco"] = False
@@ -410,7 +438,7 @@ async def monitorar_sistema(app: Application):
                     if pinfo['cpu_percent'] > 50 or pinfo['memory_percent'] > 50:
                         proc_id = f"{pinfo['pid']}-{pinfo['name']}"
                         if proc_id not in alertas_enviados["processos"]:
-                            await enviar_alerta(app, 
+                            enviar_alerta_sync(
                                 f"⚠️ *Processo com Alto Consumo*\n\n"
                                 f"Processo: {pinfo['name']}\n"
                                 f"PID: {pinfo['pid']}\n"
@@ -428,13 +456,14 @@ async def monitorar_sistema(app: Application):
                 if user_id not in alertas_enviados["usuarios"]:
                     # Obtém localização do IP
                     try:
-                        ip_info = await executar_comando(f"curl -s ipinfo.io/{user.host}")
-                        ip_data = json.loads(ip_info)
+                        import requests
+                        response = requests.get(f"https://ipinfo.io/{user.host}/json")
+                        ip_data = response.json()
                         localizacao = f"{ip_data.get('city', 'N/A')}, {ip_data.get('region', 'N/A')}, {ip_data.get('country', 'N/A')}"
                     except:
                         localizacao = "Não disponível"
                     
-                    await enviar_alerta(app,
+                    enviar_alerta_sync(
                         f"👤 *Novo Usuário Conectado*\n\n"
                         f"Usuário: {user.name}\n"
                         f"IP: {user.host}\n"
@@ -444,23 +473,11 @@ async def monitorar_sistema(app: Application):
                     )
                     alertas_enviados["usuarios"].add(user_id)
             
-            await asyncio.sleep(INTERVALO_MONITORAMENTO)
+            time.sleep(INTERVALO_MONITORAMENTO)
             
         except Exception as e:
             logger.error(f"Erro no monitoramento: {e}")
-            await asyncio.sleep(INTERVALO_MONITORAMENTO)
-
-async def enviar_alerta(app: Application, mensagem: str):
-    """Envia alerta para usuários autorizados"""
-    try:
-        # Envia para o dono
-        await app.bot.send_message(
-            chat_id=IDS_AUTORIZADOS[0] if IDS_AUTORIZADOS else None,
-            text=mensagem,
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
-    except Exception as e:
-        logger.error(f"Erro ao enviar alerta: {e}")
+            time.sleep(INTERVALO_MONITORAMENTO)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para botões inline"""
@@ -645,7 +662,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
     
     elif query.data == "rede_speedtest":
-        # Informa que o teste começou
         await query.edit_message_text(
             "🚀 *Speed Test*\n\n"
             "⏳ Iniciando teste de velocidade...\n"
@@ -654,7 +670,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         # Executa o teste
-        resultado = await executar_speedtest()
+        resultado = executar_speedtest()
         
         # Mostra o resultado
         keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data=MENU_REDE)]]
@@ -690,8 +706,9 @@ def main():
         app.add_handler(CallbackQueryHandler(button_handler))
         app.add_error_handler(error_handler)
         
-        # Iniciar monitoramento em background
-        asyncio.create_task(monitorar_sistema(app))
+        # Iniciar thread de monitoramento
+        monitoring_thread = threading.Thread(target=monitorar_sistema_thread, args=(app,), daemon=True)
+        monitoring_thread.start()
         
         # Iniciar bot
         logger.info("🚀 Bot iniciado!")
