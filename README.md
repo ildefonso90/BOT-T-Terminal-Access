@@ -1,21 +1,52 @@
-# 🤖 BOT-T-Terminal-Access
+# 🤖 BOT-T-Terminal
 
-Bot do Telegram para controle remoto de servidores Linux via terminal.
+Bot do Telegram para monitoramento e controle remoto de servidores Linux.
 
 ## 📋 Características
 
-* 🔐 Sistema de autorização e bloqueio de usuários
-* 💻 Execução de comandos remotamente com timeout de 30 segundos
-* 📊 Monitoramento em tempo real:
-  * CPU e processos
-  * Memória RAM e Swap
-  * Uso de disco
-  * Interfaces de rede
-* 🎯 Interface amigável com botões e emojis
-* 🔄 Disponível em múltiplas linguagens:
-  * Python 🐍
-  * Node.js 💚
-  * Go 🦫
+### 1. 🖥️ Monitoramento em Tempo Real
+* CPU, RAM e Disco com alertas automáticos
+* Temperatura do sistema (quando disponível)
+* Lista de processos ativos
+* Uptime e carga do sistema
+* Monitoramento de serviços
+
+### 2. 🌐 Rede
+* Status das interfaces
+* Velocidade de conexão (Speed Test)
+* IP público e interfaces
+* Conexões ativas
+* Tráfego de rede
+
+### 3. 👥 Gerenciamento de Usuários
+* Lista de usuários conectados
+* Histórico de logins
+* Localização geográfica dos acessos
+* Gerenciamento de permissões
+* Controle de acesso SSH
+
+### 4. 🔒 Segurança
+* Firewall (iptables/ufw)
+* Fail2Ban
+* Logs de segurança
+* Escaneamento de vulnerabilidades
+* Monitoramento de tentativas de acesso
+
+### 5. 🔔 Sistema de Alertas
+* CPU acima de 80%
+* RAM acima de 80%
+* Disco acima de 85%
+* Processos consumindo muitos recursos
+* Novos usuários conectados
+* Localização dos IPs de acesso
+* Falhas de serviços
+
+### 6. 📊 Logs e Relatórios
+* Logs do sistema
+* Logs de segurança
+* Logs de aplicações web
+* Logs personalizados
+* Histórico de comandos
 
 ## 🚀 Instalação
 
@@ -31,9 +62,8 @@ sudo python3 install.py
 ```
 
 O instalador irá:
-* ✅ Verificar os requisitos do sistema
+* ✅ Verificar requisitos do sistema
 * 📦 Instalar dependências necessárias
-* 🔄 Tentar instalar em múltiplas linguagens
 * ⚙️ Configurar token e usuários
 * 🛠️ Criar serviço systemd
 * 🔗 Criar alias para fácil acesso
@@ -47,100 +77,105 @@ O bot usa um arquivo `config.json`:
     "token": "SEU_TOKEN_AQUI",
     "dono_username": "SEU_USERNAME",
     "ids_autorizados": [123456789],
-    "usuarios_bloqueados": [],
-    "tentativas_maximas": 3
+    "alertas": {
+        "limite_cpu": 80,
+        "limite_ram": 80,
+        "limite_disco": 85,
+        "limite_processo_cpu": 50,
+        "limite_processo_ram": 50,
+        "intervalo_monitoramento": 60
+    },
+    "notificacoes": {
+        "cpu": true,
+        "ram": true,
+        "disco": true,
+        "processos": true,
+        "usuarios": true,
+        "servicos": true
+    }
 }
 ```
 
 ### 🔑 Obtendo o Token
-
 1. Abra o Telegram e procure por @BotFather
 2. Envie `/newbot` e siga as instruções
 3. Copie o token gerado
 
 ### 🆔 Obtendo seu ID
-
 1. Abra o Telegram e procure por @userinfobot
 2. Envie qualquer mensagem para ver seu ID
 
 ## 📱 Uso
 
 ### Menu de Gerenciamento
-
 ```bash
-bot
+sudo bot
 ```
 
-### Comandos Systemd
-
-```bash
-sudo systemctl start telegram-terminal-bot
-sudo systemctl stop telegram-terminal-bot
-sudo systemctl restart telegram-terminal-bot
-sudo systemctl status telegram-terminal-bot
-```
-
-### Logs
-
-```bash
-sudo journalctl -u telegram-terminal-bot -f
-```
-
-### 🤖 Comandos do Bot
-
+### Comandos do Bot
 * `/start` - Menu principal com botões
 * `/cmd` - Executa comando no servidor
-* `/status` - Status detalhado do sistema
-* `/processos` - Lista top 10 processos
-* `/memoria` - Informações de RAM e Swap
-* `/disco` - Uso de todas partições
-* `/rede` - Status das interfaces
-* `/ajuda` - Lista todos comandos
+
+### Menus Disponíveis
+* 📊 **Sistema**: Status, processos, disco, memória
+* 👥 **Usuários**: Gerenciamento de usuários e SSH
+* 🔧 **Serviços**: Status e controle de serviços
+* 🔒 **Segurança**: Firewall, Fail2Ban, scans
+* 🌐 **Rede**: Status, conexões, interfaces, speed test
+* 📝 **Logs**: Sistema, segurança, web, aplicação
+
+### Speed Test
+* Teste de velocidade da conexão
+* Download, Upload e Latência
+* Resultados formatados
+
+### Sistema de Alertas
+* Monitoramento automático
+* Alertas em tempo real
+* Localização de IPs
+* Notificações personalizáveis
 
 ## 🔒 Segurança
-
-* 👥 Sistema de autorização por ID
-* 🚫 Bloqueio após tentativas falhas
-* 🔑 Execução como root (sudo)
+* 👥 Autenticação por ID do Telegram
 * 🔐 Comunicação criptografada
-* ⏱️ Timeout em comandos longos
 * 📝 Logs detalhados
+* 🛡️ Proteção contra comandos maliciosos
 
 ## 🛠️ Manutenção
 
-### Menu de Gerenciamento
-* ▶️ Iniciar/parar/reiniciar bot
-* 📊 Ver status e logs
-* 👥 Gerenciar usuários
-* ⚙️ Atualizar configurações
+### Comandos Úteis
+```bash
+# Iniciar/Parar/Reiniciar
+sudo systemctl start telegram-terminal-bot
+sudo systemctl stop telegram-terminal-bot
+sudo systemctl restart telegram-terminal-bot
 
-### Boas Práticas
-* 💾 Backup regular do `config.json`
-* 📋 Monitoramento de logs
-* 🔄 Atualizações do sistema
-* ⚡ Verificação de performance
+# Ver Status
+sudo systemctl status telegram-terminal-bot
+
+# Ver Logs
+sudo journalctl -u telegram-terminal-bot -f
+```
+
+### Desinstalação
+```bash
+sudo bot
+# Escolha opção 8 (Desinstalar bot)
+```
 
 ## 📁 Estrutura
-
 ```
 BOT-T-Terminal-Access/
-├── install.py                # Instalador
-├── config.json               # Configurações
-├── requirements.txt          # Deps Python
-├── package.json              # Deps Node.js
-├── go.mod                    # Deps Go
-├── telegram_terminal_bot.py  # Bot Python
-├── telegram_terminal_bot.js  # Bot Node.js
-├── telegram_terminal_bot.go  # Bot Go
-└── README.md                # Documentação
+├── install.py          # Instalador
+├── config.json         # Configurações
+├── requirements.txt    # Dependências
+└── telegram_terminal_bot.py  # Bot principal
 ```
 
 ## 👤 Autor
-
 JOAC (Ildefonso)
 * 🌐 GitHub: [@ildefonso90](https://github.com/ildefonso90)
 * 📧 Email: ildefonso90@gmail.com
 
 ## 📄 Licença
-
 Este projeto está licenciado sob a [MIT License](LICENSE). 

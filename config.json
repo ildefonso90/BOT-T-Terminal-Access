@@ -15,5 +15,21 @@
         "mount", "umount", "sudo"
     ],
     "timeout_comando": 30,
-    "log_level": "INFO"
+    "log_level": "INFO",
+    "alertas": {
+        "limite_cpu": 80,
+        "limite_ram": 80,
+        "limite_disco": 85,
+        "limite_processo_cpu": 50,
+        "limite_processo_ram": 50,
+        "intervalo_monitoramento": 60
+    },
+    "notificacoes": {
+        "cpu": true,
+        "ram": true,
+        "disco": true,
+        "processos": true,
+        "usuarios": true,
+        "servicos": true
+    }
 } 
