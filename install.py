@@ -155,22 +155,106 @@ def verificar_instalacao():
     else:
         print_status(f"Python3 encontrado: {python_version.stdout.strip()}", "success")
     
-    # Verificar pip3
-    pip_version = executar_comando("pip3 --version")
-    if not pip_version or pip_version.returncode != 0:
-        print_status("pip3 não encontrado! Instalando pip3...", "warning")
-        executar_comando("apt-get update && apt-get install -y python3-pip")
-    else:
-        print_status("pip3 encontrado!", "success")
+    # Tentar diferentes métodos para garantir que temos um gerenciador de pacotes
+    print_status("Verificando/Instalando gerenciador de pacotes...", "info")
+    
+    # Lista de possíveis comandos para instalar pacotes
+    package_managers = [
+        ("pip3", "pip3 install"),
+        ("pip", "pip install"),
+        ("python3 -m pip", "python3 -m pip install"),
+        ("python -m pip", "python -m pip install")
+    ]
+    
+    install_command = None
+    for cmd, install_cmd in package_managers:
+        result = executar_comando(f"{cmd} --version")
+        if result and result.returncode == 0:
+            install_command = install_cmd
+            print_status(f"Usando {cmd} para instalação", "success")
+            break
+    
+    if not install_command:
+        print_status("Tentando instalar pip...", "info")
+        # Tentar instalar pip usando diferentes métodos
+        methods = [
+            "apt-get update && apt-get install -y python3-pip",
+            "apt update && apt install -y python3-pip",
+            "yum install -y python3-pip",
+            "dnf install -y python3-pip",
+            "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py"
+        ]
+        
+        for method in methods:
+            print_status(f"Tentando: {method}", "info")
+            result = executar_comando(method)
+            if result and result.returncode == 0:
+                # Verificar se pip foi instalado
+                for cmd, install_cmd in package_managers:
+                    result = executar_comando(f"{cmd} --version")
+                    if result and result.returncode == 0:
+                        install_command = install_cmd
+                        print_status(f"Instalação bem sucedida! Usando {cmd}", "success")
+                        break
+                if install_command:
+                    break
+        
+        if not install_command:
+            print_status("Não foi possível instalar um gerenciador de pacotes!", "error")
+            print_status("Por favor, instale manualmente o pip usando um dos comandos:", "info")
+            print("1. apt-get update && apt-get install -y python3-pip")
+            print("2. curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py")
+            sys.exit(1)
+    
+    return install_command
 
-def instalar_dependencias():
+def instalar_dependencias(install_command):
     print_status("\nInstalando dependências...", "info")
-    resultado = executar_comando("pip3 install -r requirements.txt")
-    if resultado and resultado.returncode == 0:
-        print_status("Dependências instaladas com sucesso!", "success")
-    else:
-        print_status("Erro ao instalar dependências!", "error")
+    
+    # Lista de dependências necessárias
+    dependencies = [
+        "python-telegram-bot==20.8",
+        "psutil==5.9.8"
+    ]
+    
+    # Primeiro, atualizar o próprio pip
+    print_status("Atualizando gerenciador de pacotes...", "info")
+    executar_comando(f"{install_command} --upgrade pip")
+    
+    # Instalar cada dependência individualmente
+    success = True
+    for dep in dependencies:
+        print_status(f"Instalando {dep}...", "info")
+        
+        # Tentar diferentes métodos de instalação
+        methods = [
+            f"{install_command} {dep}",
+            f"{install_command} --no-cache-dir {dep}",
+            f"{install_command} --ignore-installed {dep}",
+            f"{install_command} --user {dep}"
+        ]
+        
+        installed = False
+        for method in methods:
+            print_status(f"Tentando: {method}", "info")
+            result = executar_comando(method)
+            if result and result.returncode == 0:
+                installed = True
+                print_status(f"{dep} instalado com sucesso!", "success")
+                break
+        
+        if not installed:
+            print_status(f"Falha ao instalar {dep}", "error")
+            success = False
+    
+    if not success:
+        print_status("Algumas dependências não puderam ser instaladas.", "error")
+        print_status("Por favor, tente instalar manualmente:", "info")
+        for dep in dependencies:
+            print(f"{install_command} {dep}")
         sys.exit(1)
+    else:
+        print_status("Todas as dependências foram instaladas com sucesso!", "success")
 
 def main():
     if os.geteuid() != 0:
@@ -183,11 +267,11 @@ def main():
     print_banner()
     print_status("\nIniciando instalação do BOT-T-Terminal...", "info")
     
-    # Verificar requisitos
-    verificar_instalacao()
+    # Verificar instalação e obter comando de instalação
+    install_command = verificar_instalacao()
     
     # Instalar dependências
-    instalar_dependencias()
+    instalar_dependencias(install_command)
     
     # Configurar bot
     configurar_bot()
