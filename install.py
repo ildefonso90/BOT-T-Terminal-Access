@@ -63,11 +63,16 @@ def instalar_dependencias():
         # Instala python3-venv e python3-pip
         print(f"{Cores.BLUE}📌 Instalando requisitos básicos...{Cores.END}")
         subprocess.run(["apt", "update"], check=True)
-        subprocess.run(["apt", "install", "-y", "python3-venv", "python3-pip", "python3-psutil"], check=True)
+        subprocess.run(["apt", "install", "-y", "python3-venv", "python3-pip", "python3-dev", "gcc", "build-essential"], check=True)
         
         # Cria e ativa ambiente virtual
         venv_path = os.path.join(os.getcwd(), "venv")
         print(f"{Cores.BLUE}📌 Criando ambiente virtual em {venv_path}...{Cores.END}")
+        
+        # Remove venv anterior se existir
+        if os.path.exists(venv_path):
+            shutil.rmtree(venv_path)
+        
         subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
         
         # Paths do ambiente virtual
@@ -80,20 +85,45 @@ def instalar_dependencias():
         
         # Instala as dependências no ambiente virtual
         print(f"{Cores.BLUE}📌 Instalando dependências Python...{Cores.END}")
-        subprocess.run([
-            pip_path, "install",
-            "python-telegram-bot==20.8"
-        ], check=True)
         
-        # Atualiza o serviço para usar o Python do ambiente virtual
-        global python_executable
-        python_executable = python_path
+        # Tenta diferentes métodos de instalação
+        try:
+            # Método 1: Instalação direta
+            subprocess.run([
+                pip_path, "install",
+                "python-telegram-bot==20.8",
+                "psutil==5.9.8"
+            ], check=True)
+        except:
+            try:
+                # Método 2: Instalação um por um
+                subprocess.run([pip_path, "install", "python-telegram-bot==20.8"], check=True)
+                subprocess.run([pip_path, "install", "psutil==5.9.8"], check=True)
+            except:
+                try:
+                    # Método 3: Instalação com --no-cache-dir
+                    subprocess.run([pip_path, "install", "--no-cache-dir", "python-telegram-bot==20.8"], check=True)
+                    subprocess.run([pip_path, "install", "--no-cache-dir", "psutil==5.9.8"], check=True)
+                except:
+                    # Método 4: Instalação via apt
+                    subprocess.run(["apt", "install", "-y", "python3-psutil"], check=True)
+                    subprocess.run([pip_path, "install", "python-telegram-bot==20.8"], check=True)
         
-        print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso!{Cores.END}")
-        return True
-        
+        # Verifica se as dependências foram instaladas
+        print(f"{Cores.BLUE}📌 Verificando instalação...{Cores.END}")
+        try:
+            subprocess.run([python_path, "-c", "import telegram; import psutil"], check=True)
+            print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso!{Cores.END}")
+            return True
+        except:
+            print(f"{Cores.FAIL}❌ Erro ao verificar dependências!{Cores.END}")
+            return False
+            
     except subprocess.CalledProcessError as e:
         print(f"{Cores.FAIL}❌ Erro ao instalar dependências: {e}{Cores.END}")
+        return False
+    except Exception as e:
+        print(f"{Cores.FAIL}❌ Erro inesperado: {e}{Cores.END}")
         return False
 
 def configurar_bot():
@@ -143,6 +173,11 @@ def configurar_bot():
 def criar_servico():
     print(f"\n{Cores.HEADER}🛠️ Criando serviço systemd...{Cores.END}")
     
+    # Obtém o caminho absoluto do diretório atual
+    dir_atual = os.path.abspath(os.getcwd())
+    venv_python = os.path.join(dir_atual, "venv", "bin", "python")
+    venv_site_packages = os.path.join(dir_atual, "venv", "lib", "python3.*", "site-packages")
+    
     servico = f"""[Unit]
 Description=BOT-T-Terminal - Bot do Telegram para controle remoto
 After=network.target
@@ -150,9 +185,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory={os.getcwd()}
-Environment="PYTHONPATH={os.getcwd()}/venv/lib/python3.*/site-packages"
-ExecStart={python_executable} {os.path.join(os.getcwd(), "telegram_terminal_bot.py")}
+WorkingDirectory={dir_atual}
+Environment="PYTHONPATH={venv_site_packages}"
+ExecStart={venv_python} {os.path.join(dir_atual, "telegram_terminal_bot.py")}
 Restart=always
 RestartSec=10
 
@@ -160,16 +195,23 @@ RestartSec=10
 WantedBy=multi-user.target
 """
     
-    # Salva o arquivo do serviço
-    service_path = "/etc/systemd/system/telegram-terminal-bot.service"
-    with open(service_path, "w") as f:
-        f.write(servico)
-    
-    # Recarrega o systemd e habilita o serviço
-    subprocess.run(["systemctl", "daemon-reload"], check=True)
-    subprocess.run(["systemctl", "enable", "telegram-terminal-bot"], check=True)
-    
-    print(f"{Cores.GREEN}✅ Serviço criado com sucesso!{Cores.END}")
+    try:
+        # Salva o arquivo do serviço
+        service_path = "/etc/systemd/system/telegram-terminal-bot.service"
+        with open(service_path, "w") as f:
+            f.write(servico)
+        
+        print(f"{Cores.BLUE}📌 Recarregando systemd...{Cores.END}")
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        
+        print(f"{Cores.BLUE}📌 Habilitando serviço...{Cores.END}")
+        subprocess.run(["systemctl", "enable", "telegram-terminal-bot"], check=True)
+        
+        print(f"{Cores.GREEN}✅ Serviço criado com sucesso!{Cores.END}")
+        return True
+    except Exception as e:
+        print(f"{Cores.FAIL}❌ Erro ao criar serviço: {e}{Cores.END}")
+        return False
 
 def criar_alias():
     print(f"\n{Cores.HEADER}🔗 Criando alias para o menu...{Cores.END}")
