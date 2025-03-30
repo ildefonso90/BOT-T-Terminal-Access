@@ -1,4 +1,4 @@
-# 🤖 BOT-T-Terminal
+# 🤖 BOT-T-Terminal-Access
 
 Bot do Telegram para controle remoto de servidores Linux via terminal.
 
@@ -18,8 +18,8 @@ Bot do Telegram para controle remoto de servidores Linux via terminal.
 
 1. Clone o repositório:
 ```bash
-git clone https://github.com/ildefonso090/BOT-T-Terminal.git
-cd BOT-T-Terminal
+git clone https://github.com/ildefonso90/BOT-T-Terminal-Access.git
+cd BOT-T-Terminal-Access
 ```
 
 2. Execute o instalador:
@@ -113,7 +113,7 @@ sudo journalctl -u telegram-terminal-bot -f
 ## 📁 Estrutura
 
 ```
-BOT-T-Terminal/
+BOT-T-Terminal-Access/
 ├── install.py           # Script de instalação
 ├── config.json          # Configurações do bot
 ├── requirements.txt     # Dependências Python
@@ -128,8 +128,8 @@ BOT-T-Terminal/
 ## 👤 Autor
 
 JOAC (Ildefonso)
-- GitHub: [@ildefonso090](https://github.com/ildefonso090)
-- Email: [ildefonso090@gmail.com](mailto:ildefonso090@gmail.com)
+- GitHub: [@ildefonso90](https://github.com/ildefonso90)
+- Email: [ildefonso90@gmail.com](mailto:ildefonso90@gmail.com)
 
 ## 📄 Licença
 
