@@ -157,6 +157,60 @@ sudo systemctl status telegram-terminal-bot
 sudo journalctl -u telegram-terminal-bot -f
 ```
 
+### Resolução de Problemas
+
+#### Dependências Python
+Se você encontrar erros relacionados a módulos Python faltantes, você pode instalá-los manualmente:
+
+```bash
+# Ative o ambiente virtual
+source venv/bin/activate
+
+# Instale as dependências
+pip install -r requirements.txt
+
+# Ou instale individualmente
+pip install python-telegram-bot==20.8
+pip install psutil==5.9.8
+pip install requests==2.31.0
+pip install speedtest-cli==2.1.3
+pip install aiohttp==3.9.3
+pip install asyncio==3.4.3
+pip install python-dateutil==2.8.2
+```
+
+#### Problemas Comuns
+
+1. **ModuleNotFoundError: No module named 'requests'**
+   ```bash
+   sudo apt update
+   sudo apt install python3-pip
+   sudo pip3 install requests
+   ```
+
+2. **Erro de Permissão**
+   ```bash
+   # Certifique-se de que o diretório do bot tem as permissões corretas
+   sudo chown -R root:root /root/BOT-T-Terminal-Access
+   sudo chmod -R 755 /root/BOT-T-Terminal-Access
+   ```
+
+3. **Serviço não Inicia**
+   ```bash
+   # Verifique os logs do serviço
+   sudo journalctl -u telegram-terminal-bot -n 50 --no-pager
+   
+   # Reinicie o serviço
+   sudo systemctl daemon-reload
+   sudo systemctl restart telegram-terminal-bot
+   ```
+
+4. **Ambiente Virtual não Encontrado**
+   ```bash
+   # Recrie o ambiente virtual
+   sudo python3 install.py
+   ```
+
 ### Desinstalação
 ```bash
 sudo bot

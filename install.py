@@ -86,37 +86,45 @@ def instalar_dependencias():
         # Instala as dependências no ambiente virtual
         print(f"{Cores.BLUE}📌 Instalando dependências Python...{Cores.END}")
         
-        # Tenta diferentes métodos de instalação
-        try:
-            # Método 1: Instalação direta
-            subprocess.run([
-                pip_path, "install",
-                "python-telegram-bot==20.8",
-                "psutil==5.9.8"
-            ], check=True)
-        except:
+        # Instala requisitos do arquivo requirements.txt
+        requirements_file = os.path.join(os.getcwd(), "requirements.txt")
+        if os.path.exists(requirements_file):
             try:
-                # Método 2: Instalação um por um
-                subprocess.run([pip_path, "install", "python-telegram-bot==20.8"], check=True)
-                subprocess.run([pip_path, "install", "psutil==5.9.8"], check=True)
+                subprocess.run([pip_path, "install", "-r", requirements_file], check=True)
             except:
-                try:
-                    # Método 3: Instalação com --no-cache-dir
-                    subprocess.run([pip_path, "install", "--no-cache-dir", "python-telegram-bot==20.8"], check=True)
-                    subprocess.run([pip_path, "install", "--no-cache-dir", "psutil==5.9.8"], check=True)
-                except:
-                    # Método 4: Instalação via apt
-                    subprocess.run(["apt", "install", "-y", "python3-psutil"], check=True)
-                    subprocess.run([pip_path, "install", "python-telegram-bot==20.8"], check=True)
+                print(f"{Cores.WARNING}⚠️ Falha ao instalar via requirements.txt, tentando método alternativo...{Cores.END}")
+                
+                # Instala dependências individualmente
+                dependencies = [
+                    "python-telegram-bot==20.8",
+                    "psutil==5.9.8",
+                    "requests==2.31.0",
+                    "speedtest-cli==2.1.3",
+                    "aiohttp==3.9.3",
+                    "asyncio==3.4.3",
+                    "python-dateutil==2.8.2"
+                ]
+                
+                for dep in dependencies:
+                    try:
+                        print(f"{Cores.BLUE}📌 Instalando {dep}...{Cores.END}")
+                        subprocess.run([pip_path, "install", "--no-cache-dir", dep], check=True)
+                    except:
+                        print(f"{Cores.WARNING}⚠️ Falha ao instalar {dep}, tentando via apt...{Cores.END}")
+                        pkg_name = dep.split("==")[0]
+                        try:
+                            subprocess.run(["apt", "install", "-y", f"python3-{pkg_name.replace('-', '_')}"], check=True)
+                        except:
+                            print(f"{Cores.FAIL}❌ Não foi possível instalar {dep}{Cores.END}")
         
         # Verifica se as dependências foram instaladas
         print(f"{Cores.BLUE}📌 Verificando instalação...{Cores.END}")
         try:
-            subprocess.run([python_path, "-c", "import telegram; import psutil"], check=True)
+            subprocess.run([python_path, "-c", "import telegram, psutil, requests, speedtest_cli, aiohttp, asyncio, dateutil"], check=True)
             print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso!{Cores.END}")
             return True
-        except:
-            print(f"{Cores.FAIL}❌ Erro ao verificar dependências!{Cores.END}")
+        except Exception as e:
+            print(f"{Cores.FAIL}❌ Erro ao verificar dependências: {str(e)}{Cores.END}")
             return False
             
     except subprocess.CalledProcessError as e:
