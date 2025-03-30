@@ -1,0 +1,15 @@
+{
+  "name": "bot-t-terminal",
+  "version": "1.0.0",
+  "description": "Bot do Telegram para controle remoto de servidor Linux",
+  "main": "telegram_terminal_bot.js",
+  "scripts": {
+    "start": "node telegram_terminal_bot.js"
+  },
+  "author": "JOAC",
+  "license": "MIT",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.64.0",
+    "systeminformation": "^5.21.24"
+  }
+} 

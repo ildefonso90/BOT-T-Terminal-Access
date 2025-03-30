@@ -1,678 +1,437 @@
 #!/usr/bin/env python3
 import os
 import sys
-import subprocess
 import json
+import subprocess
+import platform
+import shutil
 from pathlib import Path
-import time
+
+# Cores para output
+class Cores:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    END = '\033[0m'
+    BOLD = '\033[1m'
 
 def print_banner():
-    banner = """
-\033[1;36m██████╗  ██████╗ ████████╗   ████████╗    ████████╗███████╗██████╗ ███╗   ███╗██╗███╗   ██╗ █████╗ ██╗     
-██╔══██╗██╔═══██╗╚══██╔══╝   ╚══██╔══╝    ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██║████╗  ██║██╔══██╗██║     
-██████╔╝██║   ██║   ██║         ██║          ██║   █████╗  ██████╔╝██╔████╔██║██║██╔██╗ ██║███████║██║     
-██╔══██╗██║   ██║   ██║         ██║          ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║██║╚██╗██║██╔══██║██║     
-██████╔╝╚██████╔╝   ██║         ██║          ██║   ███████╗██║  ██║██║ ╚═╝ ██║██║██║ ╚████║██║  ██║███████╗
-╚═════╝  ╚═════╝    ╚═╝         ╚═╝          ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝\033[0m
-                                                                                                    
-\033[1;33m╔══════════════════════════════════════════════════════════════════════════════╗
-║                     Controle Remoto via Telegram Bot                        ║
-║                        Desenvolvido por: \033[1;32mJOAC\033[1;33m                              ║
-║                          Versão: 1.0.0                                     ║
-╚══════════════════════════════════════════════════════════════════════════════╝\033[0m
-"""
-    # Efeito de digitação para o banner
-    for line in banner.split('\n'):
-        print(line)
-        time.sleep(0.1)  # Pequeno delay entre cada linha
+    print(f"""{Cores.BLUE}
+╔══════════════════════════════════════════╗
+║     🤖 BOT-T-Terminal - Instalação       ║ 
+║                                          ║
+║  Bot do Telegram para controle remoto    ║
+║  de servidores Linux via terminal        ║
+║                                          ║
+║  Autor: JOAC                            ║
+║  Versão: 1.0.0                          ║
+╚══════════════════════════════════════════╝{Cores.END}
+    """)
 
-def print_status(message, status="info"):
-    """Imprime mensagens estilizadas"""
-    colors = {
-        "info": "\033[1;34m",    # Azul
-        "success": "\033[1;32m",  # Verde
-        "warning": "\033[1;33m",  # Amarelo
-        "error": "\033[1;31m",    # Vermelho
-        "reset": "\033[0m"        # Reset
-    }
-    
-    prefix = {
-        "info": "ℹ️",
-        "success": "✅",
-        "warning": "⚠️",
-        "error": "❌"
-    }
-    
-    print(f"{colors[status]}{prefix[status]} {message}{colors['reset']}")
+def verificar_root():
+    if os.geteuid() != 0:
+        print(f"{Cores.FAIL}❌ Este script precisa ser executado como root (sudo){Cores.END}")
+        sys.exit(1)
 
-def executar_comando(comando):
+def verificar_sistema():
+    sistema = platform.system().lower()
+    if sistema != "linux":
+        print(f"{Cores.FAIL}❌ Este bot só funciona em sistemas Linux{Cores.END}")
+        sys.exit(1)
+
+def instalar_dependencias_sistema():
+    print(f"\n{Cores.HEADER}📦 Instalando dependências do sistema...{Cores.END}")
+    
+    # Detectar gerenciador de pacotes
+    if shutil.which("apt"):
+        pkg_manager = "apt"
+    elif shutil.which("yum"):
+        pkg_manager = "yum"
+    elif shutil.which("dnf"):
+        pkg_manager = "dnf"
+    else:
+        print(f"{Cores.WARNING}⚠️ Gerenciador de pacotes não suportado. Tentando continuar...{Cores.END}")
+        return
+
+    # Instalar dependências comuns
+    deps = ["git", "curl", "python3", "python3-pip", "nodejs", "npm", "golang"]
+    
     try:
-        return subprocess.run(comando, shell=True, capture_output=True, text=True)
+        if pkg_manager == "apt":
+            subprocess.run(["apt", "update"], check=True)
+            
+        for dep in deps:
+            try:
+                subprocess.run([pkg_manager, "install", "-y", dep], check=True)
+            except:
+                print(f"{Cores.WARNING}⚠️ Erro ao instalar {dep}. Continuando...{Cores.END}")
+                
     except Exception as e:
-        print_status(f"Erro ao executar comando: {e}", "error")
-        return None
+        print(f"{Cores.WARNING}⚠️ Erro ao instalar dependências: {e}{Cores.END}")
 
-def criar_servico_systemd():
-    service_content = """[Unit]
-Description=BOT-T-Terminal - Telegram Bot para Controle Remoto
+def instalar_dependencias_python():
+    print(f"\n{Cores.HEADER}📦 Instalando dependências Python...{Cores.END}")
+    
+    try:
+        # Atualizar pip
+        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "setuptools", "wheel"], check=True)
+        
+        # Instalar dependências do requirements.txt
+        if os.path.exists("requirements.txt"):
+            subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+        else:
+            subprocess.run([sys.executable, "-m", "pip", "install", "python-telegram-bot==20.8", "psutil==5.9.8"], check=True)
+            
+    except Exception as e:
+        print(f"{Cores.WARNING}⚠️ Erro ao instalar dependências Python: {e}{Cores.END}")
+        return False
+        
+    return True
+
+def instalar_dependencias_nodejs():
+    print(f"\n{Cores.HEADER}📦 Instalando dependências Node.js...{Cores.END}")
+    
+    try:
+        # Instalar dependências
+        subprocess.run(["npm", "install", "node-telegram-bot-api", "systeminformation"], check=True)
+        return True
+    except Exception as e:
+        print(f"{Cores.WARNING}⚠️ Erro ao instalar dependências Node.js: {e}{Cores.END}")
+        return False
+
+def instalar_dependencias_go():
+    print(f"\n{Cores.HEADER}📦 Instalando dependências Go...{Cores.END}")
+    
+    try:
+        # Instalar dependências
+        subprocess.run(["go", "mod", "download"], check=True)
+        subprocess.run(["go", "build", "-o", "bot"], check=True)
+        return True
+    except Exception as e:
+        print(f"{Cores.WARNING}⚠️ Erro ao instalar dependências Go: {e}{Cores.END}")
+        return False
+
+def configurar_bot():
+    print(f"\n{Cores.HEADER}⚙️ Configurando o bot...{Cores.END}")
+    
+    config = {
+        "token": "",
+        "dono_username": "",
+        "ids_autorizados": [],
+        "usuarios_bloqueados": [],
+        "tentativas_maximas": 3
+    }
+    
+    if os.path.exists("config.json"):
+        try:
+            with open("config.json", "r") as f:
+                config = json.load(f)
+        except:
+            pass
+    
+    # Solicitar token se não existir
+    if not config["token"]:
+        print(f"\n{Cores.BLUE}Para obter o token do bot:{Cores.END}")
+        print("1. Abra o Telegram e procure por @BotFather")
+        print("2. Envie /newbot e siga as instruções")
+        print("3. Copie o token gerado")
+        config["token"] = input("\nToken do bot: ").strip()
+    
+    # Solicitar username do dono se não existir
+    if not config["dono_username"]:
+        print(f"\n{Cores.BLUE}Para obter seu ID do Telegram:{Cores.END}")
+        print("1. Abra o Telegram e procure por @userinfobot")
+        print("2. Envie qualquer mensagem para ver seu ID")
+        config["dono_username"] = input("\nSeu username do Telegram (sem @): ").strip()
+        dono_id = input("Seu ID do Telegram: ").strip()
+        try:
+            dono_id = int(dono_id)
+            if dono_id not in config["ids_autorizados"]:
+                config["ids_autorizados"].append(dono_id)
+        except:
+            print(f"{Cores.WARNING}⚠️ ID inválido{Cores.END}")
+    
+    # Salvar configuração
+    with open("config.json", "w") as f:
+        json.dump(config, f, indent=4)
+    
+    print(f"\n{Cores.GREEN}✅ Configuração salva!{Cores.END}")
+
+def criar_servico():
+    print(f"\n{Cores.HEADER}🔧 Criando serviço...{Cores.END}")
+    
+    # Detectar qual versão do bot está disponível
+    if os.path.exists("telegram_terminal_bot.py"):
+        bot_cmd = f"{sys.executable} {os.path.abspath('telegram_terminal_bot.py')}"
+        print(f"{Cores.BLUE}ℹ️ Usando versão Python{Cores.END}")
+    elif os.path.exists("telegram_terminal_bot.js"):
+        bot_cmd = f"node {os.path.abspath('telegram_terminal_bot.js')}"
+        print(f"{Cores.BLUE}ℹ️ Usando versão Node.js{Cores.END}")
+    elif os.path.exists("bot"):
+        bot_cmd = os.path.abspath("bot")
+        print(f"{Cores.BLUE}ℹ️ Usando versão Go{Cores.END}")
+    else:
+        print(f"{Cores.FAIL}❌ Nenhuma versão do bot encontrada{Cores.END}")
+        return False
+    
+    service = f"""[Unit]
+Description=BOT-T-Terminal - Bot do Telegram para controle remoto
 After=network.target
-Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-Group=root
-WorkingDirectory={work_dir}
-ExecStart=/usr/bin/python3 {work_dir}/telegram_terminal_bot.py
+WorkingDirectory={os.getcwd()}
+ExecStart={bot_cmd}
 Restart=always
 RestartSec=10
-StartLimitInterval=0
-Environment="PYTHONUNBUFFERED=1"
-
-# Garantir privilégios necessários
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-SecureBits=keep-caps
-NoNewPrivileges=no
-
-# Configurações de segurança
-ProtectSystem=full
-ReadWritePaths={work_dir}
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 """
-    work_dir = os.getcwd()
-    service_content = service_content.format(work_dir=work_dir)
-    
-    service_path = '/etc/systemd/system/telegram-terminal-bot.service'
-    with open(service_path, 'w') as f:
-        f.write(service_content)
-    
-    # Ajustar permissões
-    os.chmod(service_path, 0o644)
-    os.chmod('telegram_terminal_bot.py', 0o755)
 
-def configurar_bot():
-    print_status("\n=== Configuração do BOT-T-Terminal ===", "info")
-    
-    config = {}
-    
-    # Token do Bot
-    print_status("\nPara obter o token do bot:", "info")
-    print("1. Abra o Telegram e procure por @BotFather")
-    print("2. Envie /newbot e siga as instruções")
-    print("3. Copie o token fornecido")
-    print()
-    config['token'] = input("🔑 Cole o token do seu bot aqui: ").strip()
-    
-    # Username do dono
-    print_status("\nConfiguração do Dono do Bot:", "info")
-    print("⚠️ IMPORTANTE: O username deve ser exatamente igual ao do Telegram")
-    print("1. Abra seu Telegram")
-    print("2. Vá em Configurações -> Username")
-    print()
-    config['dono_username'] = input("Digite seu username do Telegram (sem @): ").strip().lower()
-    
-    # IDs autorizados
-    print_status("\nAdicionando usuários autorizados:", "info")
-    print_status("\nComo conseguir seu ID do Telegram:", "info")
-    print("\nMétodo 1 - Usando @userinfobot:")
-    print("1. Abra o Telegram")
-    print("2. Procure por @userinfobot")
-    print("3. Clique no bot")
-    print("4. Envie qualquer mensagem")
-    print("5. O bot responderá com seu ID")
-    
-    print("\nMétodo 2 - Usando @RawDataBot:")
-    print("1. Procure por @RawDataBot no Telegram")
-    print("2. Clique em 'Start'")
-    print("3. O bot mostrará todas suas informações, incluindo seu ID")
-    
-    print("\nMétodo 3 - Usando @getidsbot:")
-    print("1. Procure por @getidsbot no Telegram")
-    print("2. Envie /start")
-    print("3. O bot mostrará seu ID")
-    
-    print("\nMétodo 4 - Via Navegador:")
-    print("1. Acesse web.telegram.org")
-    print("2. Faça login")
-    print("3. Abra o DevTools (F12)")
-    print("4. Procure por 'id' nos dados armazenados")
-    
-    print(f"\n⚠️ IMPORTANTE: Certifique-se de adicionar seu próprio ID como dono ({config['dono_username']})")
-    print("💡 O ID é um número longo (geralmente 9-10 dígitos)")
-    print()
-    
-    ids_autorizados = []
-    while True:
-        user_id = input("\nDigite o ID do usuário autorizado (ou pressione Enter para terminar): ").strip()
-        if not user_id:
-            break
-        try:
-            ids_autorizados.append(int(user_id))
-        except ValueError:
-            print_status("ID inválido! Digite apenas números.", "error")
-    
-    config['ids_autorizados'] = ids_autorizados
-    config['tentativas_maximas'] = 7
-    config['usuarios_bloqueados'] = []
-    
-    # Salvar configurações
+    # Criar arquivo do serviço
+    service_path = "/etc/systemd/system/telegram-terminal-bot.service"
+    with open(service_path, "w") as f:
+        f.write(service)
+
+    # Recarregar daemon e habilitar serviço
     try:
-        with open('config.json', 'w') as f:
-            json.dump(config, f, indent=4)
-        os.chmod('config.json', 0o600)  # Apenas root pode ler/escrever
-        print_status("Configurações salvas com sucesso!", "success")
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "enable", "telegram-terminal-bot"], check=True)
+        subprocess.run(["systemctl", "start", "telegram-terminal-bot"], check=True)
+        print(f"{Cores.GREEN}✅ Serviço criado e iniciado!{Cores.END}")
+        return True
     except Exception as e:
-        print_status(f"Erro ao salvar configurações: {str(e)}", "error")
-        sys.exit(1)
-    
-    return config
-
-def verificar_instalacao():
-    """Verifica se todas as dependências estão instaladas"""
-    print_status("\nVerificando requisitos do sistema...", "info")
-    
-    # Verificar Python3
-    python_version = executar_comando("python3 --version")
-    if not python_version or python_version.returncode != 0:
-        print_status("Python3 não encontrado! Tentando instalar...", "warning")
-        # Tentar instalar Python3
-        methods = [
-            "apt-get update && apt-get install -y python3",
-            "apt update && apt install -y python3",
-            "yum install -y python3",
-            "dnf install -y python3"
-        ]
-        for method in methods:
-            result = executar_comando(method)
-            if result and result.returncode == 0:
-                print_status("Python3 instalado com sucesso!", "success")
-                break
-    else:
-        print_status(f"Python3 encontrado: {python_version.stdout.strip()}", "success")
-    
-    # Verificar Node.js como alternativa
-    node_version = executar_comando("node --version")
-    if node_version and node_version.returncode == 0:
-        print_status(f"Node.js encontrado: {node_version.stdout.strip()}", "success")
-        return "node"
-    
-    # Verificar Go como alternativa
-    go_version = executar_comando("go version")
-    if go_version and go_version.returncode == 0:
-        print_status(f"Go encontrado: {go_version.stdout.strip()}", "success")
-        return "go"
-    
-    # Tentar diferentes métodos para gerenciador de pacotes Python
-    print_status("Verificando/Instalando gerenciador de pacotes...", "info")
-    
-    package_managers = [
-        ("pip3", "pip3 install"),
-        ("pip", "pip install"),
-        ("python3 -m pip", "python3 -m pip install"),
-        ("python -m pip", "python -m pip install")
-    ]
-    
-    for cmd, install_cmd in package_managers:
-        result = executar_comando(f"{cmd} --version")
-        if result and result.returncode == 0:
-            print_status(f"Usando {cmd} para instalação", "success")
-            return install_cmd
-    
-    # Se não encontrou pip, tentar instalar
-    print_status("Tentando instalar gerenciadores de pacotes...", "info")
-    
-    # Tentar instalar pip
-    pip_methods = [
-        "apt-get update && apt-get install -y python3-pip",
-        "apt update && apt install -y python3-pip",
-        "yum install -y python3-pip",
-        "dnf install -y python3-pip",
-        "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py"
-    ]
-    
-    # Tentar instalar Node.js
-    node_methods = [
-        "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
-        "dnf module install -y nodejs:18/common",
-        "yum install -y nodejs npm"
-    ]
-    
-    # Tentar instalar Go
-    go_methods = [
-        "apt-get update && apt-get install -y golang-go",
-        "yum install -y golang",
-        "dnf install -y golang"
-    ]
-    
-    # Tentar todos os métodos
-    for method in pip_methods + node_methods + go_methods:
-        print_status(f"Tentando: {method}", "info")
-        result = executar_comando(method)
-        if result and result.returncode == 0:
-            # Verificar qual foi instalado
-            for cmd, install_cmd in package_managers:
-                if executar_comando(f"{cmd} --version").returncode == 0:
-                    return install_cmd
-            if executar_comando("node --version").returncode == 0:
-                return "node"
-            if executar_comando("go version").returncode == 0:
-                return "go"
-    
-    print_status("Não foi possível instalar nenhum gerenciador de pacotes!", "error")
-    print_status("Por favor, instale manualmente um dos seguintes:", "info")
-    print("1. Python: apt-get update && apt-get install -y python3-pip")
-    print("2. Node.js: curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs")
-    print("3. Go: apt-get update && apt-get install -y golang-go")
-    sys.exit(1)
-
-def instalar_dependencias(install_type):
-    print_status("\nInstalando dependências...", "info")
-    
-    if install_type == "node":
-        # Criar package.json
-        package_json = {
-            "name": "bot-t-terminal",
-            "version": "1.0.0",
-            "dependencies": {
-                "node-telegram-bot-api": "^0.61.0",
-                "systeminformation": "^5.21.7"
-            }
-        }
-        with open('package.json', 'w') as f:
-            json.dump(package_json, f, indent=2)
-        
-        # Instalar dependências Node.js
-        methods = [
-            "npm install",
-            "npm install --no-package-lock",
-            "npm install --force"
-        ]
-        
-        for method in methods:
-            print_status(f"Tentando: {method}", "info")
-            result = executar_comando(method)
-            if result and result.returncode == 0:
-                print_status("Dependências Node.js instaladas com sucesso!", "success")
-                return True
-        
-    elif install_type == "go":
-        # Criar go.mod
-        executar_comando("go mod init bot-t-terminal")
-        
-        # Instalar dependências Go
-        go_deps = [
-            "go get -u github.com/go-telegram-bot-api/telegram-bot-api/v5",
-            "go get -u github.com/shirou/gopsutil/v3"
-        ]
-        
-        success = True
-        for dep in go_deps:
-            print_status(f"Instalando: {dep}", "info")
-            result = executar_comando(dep)
-            if not result or result.returncode != 0:
-                success = False
-        
-        if success:
-            print_status("Dependências Go instaladas com sucesso!", "success")
-            return True
-            
-    else:  # Python
-        # Lista de dependências Python
-        dependencies = [
-            "python-telegram-bot==20.8",
-            "psutil==5.9.8"
-        ]
-        
-        # Primeiro, atualizar o pip
-        executar_comando(f"{install_type} --upgrade pip")
-        
-        # Instalar cada dependência
-        success = True
-        for dep in dependencies:
-            methods = [
-                f"{install_type} {dep}",
-                f"{install_type} --no-cache-dir {dep}",
-                f"{install_type} --ignore-installed {dep}",
-                f"{install_type} --user {dep}"
-            ]
-            
-            installed = False
-            for method in methods:
-                print_status(f"Tentando: {method}", "info")
-                result = executar_comando(method)
-                if result and result.returncode == 0:
-                    installed = True
-                    print_status(f"{dep} instalado com sucesso!", "success")
-                    break
-            
-            if not installed:
-                success = False
-        
-        if success:
-            print_status("Todas as dependências Python instaladas com sucesso!", "success")
-            return True
-    
-    print_status("Falha ao instalar dependências.", "error")
-    return False
-
-def mostrar_menu():
-    """Mostra o menu interativo do BOT-T-Terminal"""
-    while True:
-        os.system('clear' if os.name == 'posix' else 'cls')
-        print("""\033[1;36m
-╔══════════════════════════════════════════════════╗
-║             BOT-T-Terminal - Menu               ║
-╠══════════════════════════════════════════════════╣
-║                                                 ║
-║  [1] 🟢 Iniciar Bot                            ║
-║  [2] 🔴 Parar Bot                              ║
-║  [3] 🔄 Reiniciar Bot                          ║
-║  [4] 📊 Status do Bot                          ║
-║  [5] 📝 Ver Logs                               ║
-║  [6] 👥 Gerenciar Usuários                     ║
-║  [7] ⚙️  Configurações                          ║
-║  [8] ℹ️  Sobre                                  ║
-║  [0] 🚪 Sair                                   ║
-║                                                 ║
-╚══════════════════════════════════════════════════╝\033[0m
-""")
-        opcao = input("\nEscolha uma opção: ").strip()
-        
-        if opcao == "1":
-            print_status("\nIniciando o BOT-T-Terminal...", "info")
-            resultado = executar_comando("systemctl start telegram-terminal-bot")
-            if resultado and resultado.returncode == 0:
-                print_status("Bot iniciado com sucesso!", "success")
-            else:
-                print_status("Erro ao iniciar o bot!", "error")
-        
-        elif opcao == "2":
-            print_status("\nParando o BOT-T-Terminal...", "info")
-            resultado = executar_comando("systemctl stop telegram-terminal-bot")
-            if resultado and resultado.returncode == 0:
-                print_status("Bot parado com sucesso!", "success")
-            else:
-                print_status("Erro ao parar o bot!", "error")
-        
-        elif opcao == "3":
-            print_status("\nReiniciando o BOT-T-Terminal...", "info")
-            resultado = executar_comando("systemctl restart telegram-terminal-bot")
-            if resultado and resultado.returncode == 0:
-                print_status("Bot reiniciado com sucesso!", "success")
-            else:
-                print_status("Erro ao reiniciar o bot!", "error")
-        
-        elif opcao == "4":
-            print_status("\nStatus do BOT-T-Terminal:", "info")
-            status = executar_comando("systemctl status telegram-terminal-bot")
-            if status:
-                print("\n" + status.stdout)
-            input("\nPressione Enter para continuar...")
-        
-        elif opcao == "5":
-            print_status("\nÚltimas 50 linhas do log:", "info")
-            logs = executar_comando("journalctl -u telegram-terminal-bot -n 50 --no-pager")
-            if logs:
-                print("\n" + logs.stdout)
-            input("\nPressione Enter para continuar...")
-        
-        elif opcao == "6":
-            while True:
-                os.system('clear' if os.name == 'posix' else 'cls')
-                print("""\033[1;33m
-╔══════════════════════════════════════════════════╗
-║           Gerenciamento de Usuários             ║
-╠══════════════════════════════════════════════════╣
-║                                                 ║
-║  [1] 📋 Listar Usuários Autorizados            ║
-║  [2] ➕ Adicionar Usuário                       ║
-║  [3] ➖ Remover Usuário                         ║
-║  [4] 🔓 Desbloquear Usuário                    ║
-║  [0] 🔙 Voltar                                 ║
-║                                                 ║
-╚══════════════════════════════════════════════════╝\033[0m
-""")
-                sub_opcao = input("\nEscolha uma opção: ").strip()
-                
-                if sub_opcao == "1":
-                    try:
-                        with open('config.json', 'r') as f:
-                            config = json.load(f)
-                        print("\nUsuários Autorizados:")
-                        for user_id in config['ids_autorizados']:
-                            print(f"- ID: {user_id}")
-                        print("\nUsuários Bloqueados:")
-                        for user_id in config.get('usuarios_bloqueados', []):
-                            print(f"- ID: {user_id}")
-                    except Exception as e:
-                        print_status(f"Erro ao ler configurações: {e}", "error")
-                    input("\nPressione Enter para continuar...")
-                
-                elif sub_opcao == "2":
-                    try:
-                        user_id = input("\nDigite o ID do usuário para adicionar: ").strip()
-                        with open('config.json', 'r') as f:
-                            config = json.load(f)
-                        if int(user_id) not in config['ids_autorizados']:
-                            config['ids_autorizados'].append(int(user_id))
-                            with open('config.json', 'w') as f:
-                                json.dump(config, f, indent=4)
-                            print_status("Usuário adicionado com sucesso!", "success")
-                        else:
-                            print_status("Usuário já está autorizado!", "warning")
-                    except Exception as e:
-                        print_status(f"Erro ao adicionar usuário: {e}", "error")
-                    input("\nPressione Enter para continuar...")
-                
-                elif sub_opcao == "3":
-                    try:
-                        user_id = input("\nDigite o ID do usuário para remover: ").strip()
-                        with open('config.json', 'r') as f:
-                            config = json.load(f)
-                        if int(user_id) in config['ids_autorizados']:
-                            config['ids_autorizados'].remove(int(user_id))
-                            with open('config.json', 'w') as f:
-                                json.dump(config, f, indent=4)
-                            print_status("Usuário removido com sucesso!", "success")
-                        else:
-                            print_status("Usuário não encontrado!", "error")
-                    except Exception as e:
-                        print_status(f"Erro ao remover usuário: {e}", "error")
-                    input("\nPressione Enter para continuar...")
-                
-                elif sub_opcao == "4":
-                    try:
-                        user_id = input("\nDigite o ID do usuário para desbloquear: ").strip()
-                        with open('config.json', 'r') as f:
-                            config = json.load(f)
-                        if int(user_id) in config.get('usuarios_bloqueados', []):
-                            config['usuarios_bloqueados'].remove(int(user_id))
-                            with open('config.json', 'w') as f:
-                                json.dump(config, f, indent=4)
-                            print_status("Usuário desbloqueado com sucesso!", "success")
-                        else:
-                            print_status("Usuário não está bloqueado!", "warning")
-                    except Exception as e:
-                        print_status(f"Erro ao desbloquear usuário: {e}", "error")
-                    input("\nPressione Enter para continuar...")
-                
-                elif sub_opcao == "0":
-                    break
-        
-        elif opcao == "7":
-            print_status("\nAbrindo configurações...", "info")
-            try:
-                with open('config.json', 'r') as f:
-                    config = json.load(f)
-                print("\nConfigurações atuais:")
-                print(json.dumps(config, indent=4))
-            except Exception as e:
-                print_status(f"Erro ao ler configurações: {e}", "error")
-            input("\nPressione Enter para continuar...")
-        
-        elif opcao == "8":
-            print("""\033[1;32m
-╔══════════════════════════════════════════════════╗
-║               Sobre BOT-T-Terminal               ║
-╠══════════════════════════════════════════════════╣
-║                                                 ║
-║  Versão: 1.0.0                                 ║
-║  Desenvolvido por: JOAC                        ║
-║  GitHub: https://github.com/ildefonso090       ║
-║                                                ║
-║  Bot do Telegram para controle remoto de       ║
-║  servidores Linux via terminal.                ║
-║                                                ║
-╚══════════════════════════════════════════════════╝\033[0m
-""")
-            input("\nPressione Enter para continuar...")
-        
-        elif opcao == "0":
-            print_status("\nSaindo do BOT-T-Terminal...", "info")
-            break
-        
-        else:
-            print_status("Opção inválida!", "error")
-            time.sleep(1)
+        print(f"{Cores.FAIL}❌ Erro ao criar serviço: {e}{Cores.END}")
+        return False
 
 def criar_alias():
-    """Cria um alias 'bot' para acessar o menu facilmente"""
+    print(f"\n{Cores.HEADER}🔧 Criando alias...{Cores.END}")
+    
     try:
-        # Obter o caminho absoluto do script
+        # Obter caminho absoluto do script
         script_path = os.path.abspath(__file__)
         
-        # Obter o caminho do .bashrc do usuário que executou o sudo
-        sudo_user = os.environ.get('SUDO_USER', os.environ.get('USER'))
-        bashrc_path = os.path.expanduser(f'~{sudo_user}/.bashrc')
-        
-        # Criar o comando do alias
-        alias_cmd = f'\n# BOT-T-Terminal alias\nalias bot="sudo python3 {script_path} menu"\n'
+        # Obter caminho do .bashrc do usuário que executou com sudo
+        sudo_user = os.environ.get("SUDO_USER", os.environ.get("USER"))
+        bashrc_path = os.path.expanduser(f"~{sudo_user}/.bashrc")
         
         # Verificar se o alias já existe
-        if os.path.exists(bashrc_path):
-            with open(bashrc_path, 'r') as f:
-                if 'alias bot="sudo python3' in f.read():
-                    return
+        with open(bashrc_path, "r") as f:
+            if f"alias bot=" in f.read():
+                print(f"{Cores.BLUE}ℹ️ Alias 'bot' já existe{Cores.END}")
+                return True
         
-        # Adicionar o alias ao .bashrc
-        with open(bashrc_path, 'a') as f:
-            f.write(alias_cmd)
+        # Adicionar alias
+        with open(bashrc_path, "a") as f:
+            f.write(f'\nalias bot="sudo python3 {script_path} menu"\n')
         
-        # Tentar carregar o alias imediatamente
-        os.system(f'su - {sudo_user} -c "source {bashrc_path}"')
+        # Tentar carregar o alias
+        try:
+            os.system(f"su - {sudo_user} -c 'source {bashrc_path}'")
+        except:
+            pass
+            
+        print(f"{Cores.GREEN}✅ Alias 'bot' criado! Use 'source ~/.bashrc' para ativar.{Cores.END}")
+        return True
         
-        print_status("\nAlias 'bot' criado com sucesso!", "success")
-        print("Agora você pode usar o comando 'bot' para abrir o menu.")
-        print("Se o comando não funcionar imediatamente, feche e abra o terminal")
-        print("ou execute: source ~/.bashrc")
     except Exception as e:
-        print_status(f"\nNão foi possível criar o alias: {e}", "warning")
-        print("Você pode criar manualmente com o comando:")
-        print(f'echo \'alias bot="sudo python3 {script_path} menu"\' >> ~/.bashrc')
-        print("E depois execute: source ~/.bashrc")
+        print(f"{Cores.WARNING}⚠️ Erro ao criar alias: {e}{Cores.END}")
+        print(f"{Cores.BLUE}ℹ️ Você pode criar manualmente adicionando a seguinte linha ao seu .bashrc:{Cores.END}")
+        print(f"alias bot=\"sudo python3 {os.path.abspath(__file__)} menu\"")
+        return False
+
+def mostrar_menu():
+    while True:
+        print(f"""\n{Cores.HEADER}🤖 BOT-T-Terminal - Menu{Cores.END}
+
+{Cores.BLUE}1. 🚀 Iniciar bot
+2. 🛑 Parar bot
+3. 🔄 Reiniciar bot
+4. 📊 Status do bot
+5. 📝 Ver logs
+6. 👥 Gerenciar usuários
+7. ⚙️ Configurações
+8. ❌ Sair{Cores.END}
+""")
+        
+        opcao = input("Escolha uma opção: ").strip()
+        
+        if opcao == "1":
+            subprocess.run(["systemctl", "start", "telegram-terminal-bot"])
+            print(f"{Cores.GREEN}✅ Bot iniciado!{Cores.END}")
+            
+        elif opcao == "2":
+            subprocess.run(["systemctl", "stop", "telegram-terminal-bot"])
+            print(f"{Cores.GREEN}✅ Bot parado!{Cores.END}")
+            
+        elif opcao == "3":
+            subprocess.run(["systemctl", "restart", "telegram-terminal-bot"])
+            print(f"{Cores.GREEN}✅ Bot reiniciado!{Cores.END}")
+            
+        elif opcao == "4":
+            subprocess.run(["systemctl", "status", "telegram-terminal-bot"])
+            
+        elif opcao == "5":
+            subprocess.run(["journalctl", "-u", "telegram-terminal-bot", "-f"])
+            
+        elif opcao == "6":
+            gerenciar_usuarios()
+            
+        elif opcao == "7":
+            configurar_bot()
+            print(f"{Cores.BLUE}ℹ️ Reinicie o bot para aplicar as alterações{Cores.END}")
+            
+        elif opcao == "8":
+            print(f"{Cores.GREEN}👋 Até mais!{Cores.END}")
+            break
+            
+        else:
+            print(f"{Cores.WARNING}⚠️ Opção inválida{Cores.END}")
+
+def gerenciar_usuarios():
+    while True:
+        # Carregar configuração atual
+        with open("config.json", "r") as f:
+            config = json.load(f)
+        
+        print(f"""\n{Cores.HEADER}👥 Gerenciar Usuários{Cores.END}
+
+{Cores.BLUE}Usuários autorizados:{Cores.END}""")
+        for id in config["ids_autorizados"]:
+            print(f"• {id}")
+            
+        print(f"\n{Cores.BLUE}Usuários bloqueados:{Cores.END}")
+        for id in config["usuarios_bloqueados"]:
+            print(f"• {id}")
+            
+        print(f"""\n{Cores.BLUE}1. ➕ Adicionar usuário
+2. ➖ Remover usuário
+3. 🔒 Bloquear usuário
+4. 🔓 Desbloquear usuário
+5. ↩️ Voltar{Cores.END}
+""")
+        
+        opcao = input("Escolha uma opção: ").strip()
+        
+        if opcao == "1":
+            id = input("ID do usuário: ").strip()
+            try:
+                id = int(id)
+                if id not in config["ids_autorizados"]:
+                    config["ids_autorizados"].append(id)
+                    with open("config.json", "w") as f:
+                        json.dump(config, f, indent=4)
+                    print(f"{Cores.GREEN}✅ Usuário adicionado!{Cores.END}")
+                else:
+                    print(f"{Cores.WARNING}⚠️ Usuário já autorizado{Cores.END}")
+            except:
+                print(f"{Cores.FAIL}❌ ID inválido{Cores.END}")
+                
+        elif opcao == "2":
+            id = input("ID do usuário: ").strip()
+            try:
+                id = int(id)
+                if id in config["ids_autorizados"]:
+                    config["ids_autorizados"].remove(id)
+                    with open("config.json", "w") as f:
+                        json.dump(config, f, indent=4)
+                    print(f"{Cores.GREEN}✅ Usuário removido!{Cores.END}")
+                else:
+                    print(f"{Cores.WARNING}⚠️ Usuário não encontrado{Cores.END}")
+            except:
+                print(f"{Cores.FAIL}❌ ID inválido{Cores.END}")
+                
+        elif opcao == "3":
+            id = input("ID do usuário: ").strip()
+            try:
+                id = int(id)
+                if id not in config["usuarios_bloqueados"]:
+                    config["usuarios_bloqueados"].append(id)
+                    with open("config.json", "w") as f:
+                        json.dump(config, f, indent=4)
+                    print(f"{Cores.GREEN}✅ Usuário bloqueado!{Cores.END}")
+                else:
+                    print(f"{Cores.WARNING}⚠️ Usuário já bloqueado{Cores.END}")
+            except:
+                print(f"{Cores.FAIL}❌ ID inválido{Cores.END}")
+                
+        elif opcao == "4":
+            id = input("ID do usuário: ").strip()
+            try:
+                id = int(id)
+                if id in config["usuarios_bloqueados"]:
+                    config["usuarios_bloqueados"].remove(id)
+                    with open("config.json", "w") as f:
+                        json.dump(config, f, indent=4)
+                    print(f"{Cores.GREEN}✅ Usuário desbloqueado!{Cores.END}")
+                else:
+                    print(f"{Cores.WARNING}⚠️ Usuário não encontrado{Cores.END}")
+            except:
+                print(f"{Cores.FAIL}❌ ID inválido{Cores.END}")
+                
+        elif opcao == "5":
+            break
+            
+        else:
+            print(f"{Cores.WARNING}⚠️ Opção inválida{Cores.END}")
 
 def main():
-    if os.geteuid() != 0:
-        print_status("Este script precisa ser executado como root (sudo)!", "error")
-        sys.exit(1)
+    # Se o argumento for "menu", mostrar menu de gerenciamento
+    if len(sys.argv) > 1 and sys.argv[1] == "menu":
+        verificar_root()
+        mostrar_menu()
+        return
 
-    # Limpar a tela
-    os.system('clear' if os.name == 'posix' else 'cls')
-    
     print_banner()
-    print_status("\nIniciando instalação do BOT-T-Terminal...", "info")
+    verificar_root()
+    verificar_sistema()
     
-    # Verificar instalação e obter tipo de instalação
-    install_type = verificar_instalacao()
+    # Instalar dependências do sistema
+    instalar_dependencias_sistema()
     
-    # Instalar dependências
-    if not instalar_dependencias(install_type):
-        print_status("Tentando métodos alternativos...", "warning")
-        # Se Python falhar, tentar Node.js
-        if install_type.endswith("install"):  # É um comando pip
-            print_status("Tentando com Node.js...", "info")
-            if executar_comando("curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs").returncode == 0:
-                if instalar_dependencias("node"):
-                    install_type = "node"
-        
-        # Se ainda falhar, tentar Go
-        if install_type != "node":
-            print_status("Tentando com Go...", "info")
-            if executar_comando("apt-get update && apt-get install -y golang-go").returncode == 0:
-                if instalar_dependencias("go"):
-                    install_type = "go"
+    # Tentar instalar em cada linguagem
+    python_ok = instalar_dependencias_python()
+    nodejs_ok = instalar_dependencias_nodejs()
+    go_ok = instalar_dependencias_go()
+    
+    if not (python_ok or nodejs_ok or go_ok):
+        print(f"{Cores.FAIL}❌ Nenhuma versão do bot pôde ser instalada{Cores.END}")
+        sys.exit(1)
     
     # Configurar bot
-    config = configurar_bot()
+    configurar_bot()
     
-    # Criar e ativar serviço systemd
-    print_status("\nConfigurando inicialização automática...", "info")
-    criar_servico_systemd()
-    
-    # Recarregar e ativar serviço
-    comandos = [
-        "systemctl daemon-reload",
-        "systemctl enable telegram-terminal-bot",
-        "systemctl restart telegram-terminal-bot"
-    ]
-    
-    for cmd in comandos:
-        resultado = executar_comando(cmd)
-        if not resultado or resultado.returncode != 0:
-            print_status(f"Erro ao executar: {cmd}", "error")
-            print("Verifique os logs com: journalctl -u telegram-terminal-bot")
-            sys.exit(1)
-    
-    # Criar alias para o comando bot
-    criar_alias()
-    
-    # Verificar status do serviço
-    status = executar_comando("systemctl is-active telegram-terminal-bot")
-    if status and status.stdout.strip() == "active":
-        print_status("\nBOT-T-Terminal instalado e em execução!", "success")
+    # Criar serviço
+    if criar_servico():
+        # Criar alias
+        criar_alias()
+        
+        print(f"""
+{Cores.GREEN}✅ Instalação concluída!
+
+Para gerenciar o bot, use:
+• {Cores.BOLD}bot{Cores.END}{Cores.GREEN} - Menu de gerenciamento
+• {Cores.BOLD}systemctl status telegram-terminal-bot{Cores.END}{Cores.GREEN} - Ver status
+• {Cores.BOLD}journalctl -u telegram-terminal-bot -f{Cores.END}{Cores.GREEN} - Ver logs
+
+Não se esqueça de:
+1. Executar 'source ~/.bashrc' para ativar o alias
+2. Iniciar uma conversa com o bot no Telegram
+3. Verificar os logs para garantir que está funcionando
+
+Divirta-se! 🚀{Cores.END}""")
     else:
-        print_status("\nBOT-T-Terminal instalado, mas pode haver problemas na execução.", "warning")
-        print("Verifique os logs com: journalctl -u telegram-terminal-bot")
-    
-    print_status("\nComo usar seu bot:", "info")
-    print("1. Abra o Telegram e procure pelo seu bot")
-    print("2. Envie /start para iniciar e ver as instruções completas")
-    print("3. Apenas o dono pode autorizar novos usuários")
-    print("4. Digite 'bot' no terminal para abrir o menu de gerenciamento")
-    
-    print_status("\nGerenciamento do serviço:", "info")
-    print("- Use o comando 'bot' para acessar todas as funções")
-    print("- Ou use os comandos tradicionais:")
-    print("  • Verificar status: sudo systemctl status telegram-terminal-bot")
-    print("  • Ver logs: sudo journalctl -u telegram-terminal-bot -f")
-    print("  • Reiniciar: sudo systemctl restart telegram-terminal-bot")
-    print("  • Parar: sudo systemctl stop telegram-terminal-bot")
-    
-    print_status("\nIMPORTANTE:", "warning")
-    print("- O bot está configurado para iniciar automaticamente com o servidor")
-    print("- Todos os comandos serão executados com privilégios root")
-    print("- Mantenha o arquivo config.json seguro e com permissões restritas")
-    print(f"- Após {config['tentativas_maximas']} tentativas falhas, usuários serão bloqueados")
-    print(f"- Apenas o dono ({config['dono_username']}) pode desbloquear usuários")
-    
-    # Banner de conclusão
-    print("""
-\033[1;32m
-╔══════════════════════════════════════════════════╗
-║      BOT-T-Terminal Instalado com Sucesso!       ║
-║          Desenvolvido com ❤️ por JOAC            ║
-╚══════════════════════════════════════════════════╝\033[0m
-""")
+        print(f"{Cores.FAIL}❌ Erro ao finalizar instalação{Cores.END}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "menu":
-        if os.geteuid() != 0:
-            print_status("Este comando precisa ser executado como root (sudo)!", "error")
-            sys.exit(1)
-        mostrar_menu()
-    else:
-        main() 
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(f"\n{Cores.WARNING}⚠️ Instalação cancelada{Cores.END}")
+        sys.exit(1) 
