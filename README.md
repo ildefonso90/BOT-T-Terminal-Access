@@ -25,7 +25,7 @@ Um bot do Telegram poderoso para controlar seu servidor Linux remotamente com pr
 
 1. **Clone o repositório:**
 ```bash
-git clone https://github.com/ildefonso090/BOT-T-Terminal-Access.git
+git clone https://github.com/ildefonso90/BOT-T-Terminal-Access.git
 cd BOT-T-Terminal-Access
 ```
 
@@ -119,5 +119,5 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 ## 👤 Autor
 
 JOAC (Ildefonso)
-- GitHub: [@ildefonso090](https://github.com/ildefonso090)
-- Email: ildefonso090@gmail.com 
+- GitHub: [@ildefonso90](https://github.com/ildefonso90)
+- Email: ildefonso90@gmail.com 
