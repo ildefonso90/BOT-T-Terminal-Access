@@ -4,15 +4,18 @@ Bot do Telegram para controle remoto de servidores Linux via terminal.
 
 ## 📋 Características
 
-- Execução de comandos remotamente
-- Monitoramento de recursos (CPU, memória, disco, rede)
-- Lista de processos em execução
-- Sistema de autorização e bloqueio de usuários
-- Interface amigável com emojis e formatação
-- Disponível em múltiplas linguagens:
-  - Python 🐍
-  - Node.js 💚
-  - Go 🦫
+* 🔐 Sistema de autorização e bloqueio de usuários
+* 💻 Execução de comandos remotamente com timeout de 30 segundos
+* 📊 Monitoramento em tempo real:
+  * CPU e processos
+  * Memória RAM e Swap
+  * Uso de disco
+  * Interfaces de rede
+* 🎯 Interface amigável com botões e emojis
+* 🔄 Disponível em múltiplas linguagens:
+  * Python 🐍
+  * Node.js 💚
+  * Go 🦫
 
 ## 🚀 Instalação
 
@@ -28,16 +31,17 @@ sudo python3 install.py
 ```
 
 O instalador irá:
-- Verificar os requisitos do sistema
-- Instalar dependências necessárias
-- Tentar instalar o bot em múltiplas linguagens
-- Configurar o token e usuários autorizados
-- Criar um serviço systemd
-- Criar um alias para fácil acesso
+* ✅ Verificar os requisitos do sistema
+* 📦 Instalar dependências necessárias
+* 🔄 Tentar instalar em múltiplas linguagens
+* ⚙️ Configurar token e usuários
+* 🛠️ Criar serviço systemd
+* 🔗 Criar alias para fácil acesso
 
 ## ⚙️ Configuração
 
-O bot usa um arquivo `config.json` com a seguinte estrutura:
+O bot usa um arquivo `config.json`:
+
 ```json
 {
     "token": "SEU_TOKEN_AQUI",
@@ -48,25 +52,27 @@ O bot usa um arquivo `config.json` com a seguinte estrutura:
 }
 ```
 
-Para obter o token:
+### 🔑 Obtendo o Token
+
 1. Abra o Telegram e procure por @BotFather
-2. Envie /newbot e siga as instruções
+2. Envie `/newbot` e siga as instruções
 3. Copie o token gerado
 
-Para obter seu ID:
+### 🆔 Obtendo seu ID
+
 1. Abra o Telegram e procure por @userinfobot
 2. Envie qualquer mensagem para ver seu ID
 
 ## 📱 Uso
 
-Após a instalação, você pode:
+### Menu de Gerenciamento
 
-1. Usar o menu de gerenciamento:
 ```bash
 bot
 ```
 
-2. Gerenciar o serviço manualmente:
+### Comandos Systemd
+
 ```bash
 sudo systemctl start telegram-terminal-bot
 sudo systemctl stop telegram-terminal-bot
@@ -74,63 +80,67 @@ sudo systemctl restart telegram-terminal-bot
 sudo systemctl status telegram-terminal-bot
 ```
 
-3. Ver logs:
+### Logs
+
 ```bash
 sudo journalctl -u telegram-terminal-bot -f
 ```
 
-### Comandos do Bot
+### 🤖 Comandos do Bot
 
-- `/start` - Mostra mensagem de boas-vindas
-- `/cmd` - Executa comando no servidor
-- `/status` - Ver status do servidor
-- `/processos` - Listar processos
-- `/memoria` - Ver uso de memória
-- `/disco` - Ver uso do disco
-- `/rede` - Ver informações de rede
-- `/ajuda` - Mostra ajuda
+* `/start` - Menu principal com botões
+* `/cmd` - Executa comando no servidor
+* `/status` - Status detalhado do sistema
+* `/processos` - Lista top 10 processos
+* `/memoria` - Informações de RAM e Swap
+* `/disco` - Uso de todas partições
+* `/rede` - Status das interfaces
+* `/ajuda` - Lista todos comandos
 
 ## 🔒 Segurança
 
-- Apenas usuários autorizados podem usar o bot
-- Sistema de bloqueio após tentativas falhas
-- Execução como root para acesso total
-- Comunicação criptografada via Telegram
-- Token armazenado localmente
+* 👥 Sistema de autorização por ID
+* 🚫 Bloqueio após tentativas falhas
+* 🔑 Execução como root (sudo)
+* 🔐 Comunicação criptografada
+* ⏱️ Timeout em comandos longos
+* 📝 Logs detalhados
 
-## 🔧 Manutenção
+## 🛠️ Manutenção
 
-- Use o menu de gerenciamento para:
-  - Iniciar/parar/reiniciar o bot
-  - Ver status e logs
-  - Gerenciar usuários autorizados
-  - Atualizar configurações
+### Menu de Gerenciamento
+* ▶️ Iniciar/parar/reiniciar bot
+* 📊 Ver status e logs
+* 👥 Gerenciar usuários
+* ⚙️ Atualizar configurações
 
-- Faça backups regulares do `config.json`
-- Monitore os logs para detectar problemas
-- Mantenha o sistema e dependências atualizados
+### Boas Práticas
+* 💾 Backup regular do `config.json`
+* 📋 Monitoramento de logs
+* 🔄 Atualizações do sistema
+* ⚡ Verificação de performance
 
 ## 📁 Estrutura
 
 ```
 BOT-T-Terminal-Access/
-├── install.py           # Script de instalação
-├── config.json          # Configurações do bot
-├── requirements.txt     # Dependências Python
-├── package.json         # Dependências Node.js
-├── go.mod              # Dependências Go
-├── telegram_terminal_bot.py   # Versão Python
-├── telegram_terminal_bot.js   # Versão Node.js
-├── telegram_terminal_bot.go   # Versão Go
-└── README.md           # Este arquivo
+├── install.py                # Instalador
+├── config.json               # Configurações
+├── requirements.txt          # Deps Python
+├── package.json              # Deps Node.js
+├── go.mod                    # Deps Go
+├── telegram_terminal_bot.py  # Bot Python
+├── telegram_terminal_bot.js  # Bot Node.js
+├── telegram_terminal_bot.go  # Bot Go
+└── README.md                # Documentação
 ```
 
 ## 👤 Autor
 
 JOAC (Ildefonso)
-- GitHub: [@ildefonso90](https://github.com/ildefonso90)
-- Email: [ildefonso90@gmail.com](mailto:ildefonso90@gmail.com)
+* 🌐 GitHub: [@ildefonso90](https://github.com/ildefonso90)
+* 📧 Email: ildefonso90@gmail.com
 
 ## 📄 Licença
 
-Este projeto está licenciado sob a MIT License. 
+Este projeto está licenciado sob a [MIT License](LICENSE). 

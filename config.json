@@ -1,0 +1,7 @@
+{
+    "token": "SEU_TOKEN_AQUI",
+    "dono_username": "SEU_USERNAME",
+    "ids_autorizados": [],
+    "usuarios_bloqueados": [],
+    "tentativas_maximas": 3
+} 

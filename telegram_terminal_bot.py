@@ -25,71 +25,88 @@ try:
     with open('config.json', 'r') as f:
         config = json.load(f)
         TOKEN = config['token']
-        DONO_USERNAME = config['dono_username']
-        USUARIOS_AUTORIZADOS = config['usuarios_autorizados']
-        TENTATIVAS_FALHAS = config.get('tentativas_falhas', {})
+        DONO_USERNAME = config['dono_username'].lower()
+        IDS_AUTORIZADOS = config['ids_autorizados']
+        USUARIOS_BLOQUEADOS = config.get('usuarios_bloqueados', [])
+        TENTATIVAS_MAXIMAS = config.get('tentativas_maximas', 3)
 except Exception as e:
-    print(f"Erro ao carregar configurações: {e}")
-    print("Execute o script de instalação (install.py) primeiro!")
+    print(f"❌ Erro ao carregar configurações: {e}")
+    print("⚠️ Execute o script de instalação (install.py) primeiro!")
     exit(1)
 
-# Limite de tentativas antes do bloqueio
-MAX_TENTATIVAS = 7
+# Mapa para armazenar tentativas de acesso
+tentativas_falhas = {}
 
 def salvar_configuracoes():
     """Salva as configurações atualizadas no arquivo"""
-    with open('config.json', 'w') as f:
-        json.dump({
-            'token': TOKEN,
-            'dono_username': DONO_USERNAME,
-            'usuarios_autorizados': USUARIOS_AUTORIZADOS,
-            'tentativas_falhas': TENTATIVAS_FALHAS
-        }, f, indent=4)
+    try:
+        with open('config.json', 'w') as f:
+            json.dump({
+                'token': TOKEN,
+                'dono_username': DONO_USERNAME,
+                'ids_autorizados': IDS_AUTORIZADOS,
+                'usuarios_bloqueados': USUARIOS_BLOQUEADOS,
+                'tentativas_maximas': TENTATIVAS_MAXIMAS
+            }, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao salvar configurações: {e}")
+        return False
 
-def is_authorized(user_id: int, username: str = None) -> bool:
-    """Verifica se o usuário está autorizado e não está bloqueado"""
+def verificar_autorizacao(user_id: int, username: str = None) -> bool:
+    """Verifica se o usuário está autorizado"""
     # Verificar se está bloqueado
-    if username and username in TENTATIVAS_FALHAS:
-        if TENTATIVAS_FALHAS[username] >= MAX_TENTATIVAS:
-            return False
+    if user_id in USUARIOS_BLOQUEADOS:
+        return False
     
-    # Verificar se é autorizado
-    return user_id in USUARIOS_AUTORIZADOS
+    # Verificar se é o dono
+    if username and username.lower() == DONO_USERNAME:
+        return True
+    
+    # Verificar se está autorizado
+    return user_id in IDS_AUTORIZADOS
 
-def registrar_tentativa_falha(username: str):
+def registrar_tentativa_falha(user_id: int):
     """Registra uma tentativa falha de acesso"""
-    if not username:
-        return
-    
-    username = username.lower()
-    if username not in TENTATIVAS_FALHAS:
-        TENTATIVAS_FALHAS[username] = 1
+    if user_id not in tentativas_falhas:
+        tentativas_falhas[user_id] = 1
     else:
-        TENTATIVAS_FALHAS[username] += 1
+        tentativas_falhas[user_id] += 1
     
-    salvar_configuracoes()
+    # Bloquear após exceder tentativas
+    if tentativas_falhas[user_id] >= TENTATIVAS_MAXIMAS:
+        if user_id not in USUARIOS_BLOQUEADOS:
+            USUARIOS_BLOQUEADOS.append(user_id)
+            salvar_configuracoes()
 
-def is_owner(username: str) -> bool:
-    """Verifica se o usuário é o dono do bot"""
-    return username.lower() == DONO_USERNAME.lower()
-
-COMANDOS_COMUNS = {
-    "📂 Listar arquivos": "ls -la",
-    "💾 Uso do disco": "df -h",
-    "🔄 Uso da memória": "free -h",
-    "⚡ Uso da CPU": "top -bn1 | head -n 5",
-    "📡 Conexões de rede": "netstat -tuln",
-    "🔍 Processos ativos": "ps aux | head -n 5",
-    "👤 Usuário atual": "whoami && id",
-    "📅 Data e hora": "date",
-    "🌡️ Temperatura CPU": "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null || echo 'Não disponível'",
-    "🔒 Últimos logins": "last | head -n 5"
-}
+def executar_comando(comando: str) -> tuple:
+    """Executa um comando e retorna (sucesso, saída)"""
+    try:
+        processo = subprocess.Popen(
+            comando,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        try:
+            stdout, stderr = processo.communicate(timeout=30)
+            sucesso = processo.returncode == 0
+            saida = stdout if sucesso else stderr
+            return sucesso, saida.strip()
+        except subprocess.TimeoutExpired:
+            processo.kill()
+            return False, "⚠️ Comando excedeu o tempo limite de 30 segundos"
+            
+    except Exception as e:
+        return False, f"❌ Erro ao executar comando: {str(e)}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start - Envia mensagem de boas-vindas com menu principal"""
-    user_id = update.effective_user.id
-    username = update.effective_user.username
+    """Comando /start - Mostra menu principal"""
+    user = update.effective_user
+    user_id = user.id
+    username = user.username
 
     if not username:
         await update.message.reply_text(
@@ -97,286 +114,442 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Verificar se é o dono
-    if is_owner(username):
-        # Resetar tentativas de falha se o dono acessar
-        TENTATIVAS_FALHAS.clear()
-        salvar_configuracoes()
-    elif not is_authorized(user_id, username):
-        # Registrar tentativa falha
-        registrar_tentativa_falha(username)
-        tentativas = TENTATIVAS_FALHAS.get(username, 0)
+    # Verificar autorização
+    if not verificar_autorizacao(user_id, username):
+        registrar_tentativa_falha(user_id)
         
-        if tentativas >= MAX_TENTATIVAS:
+        if user_id in USUARIOS_BLOQUEADOS:
             await update.message.reply_text(
-                "🚫 Acesso bloqueado devido a múltiplas tentativas não autorizadas.\n"
-                "Entre em contato com o administrador do sistema."
+                "🚫 Você está bloqueado! Entre em contato com o administrador."
             )
         else:
+            tentativas = tentativas_falhas.get(user_id, 0)
             await update.message.reply_text(
                 f"❌ Acesso não autorizado!\n"
-                f"Tentativas restantes: {MAX_TENTATIVAS - tentativas}"
+                f"Tentativas restantes: {TENTATIVAS_MAXIMAS - tentativas}"
             )
         return
 
-    # Mensagem de boas-vindas detalhada
-    welcome_message = f"""
-🤖 *Bem-vindo ao Terminal Bot!*
+    # Obter informações do sistema
+    try:
+        cpu_percent = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        status = f"""
+🤖 *BOT-T-Terminal*
 
-Este bot permite controlar seu servidor via Telegram com privilégios root.
+*Sistema:*
+• OS: {platform.system()} {platform.release()}
+• CPU: {cpu_percent}%
+• RAM: {mem.percent}%
+• Disco: {disk.percent}%
+• Uptime: {datetime.now() - datetime.fromtimestamp(psutil.boot_time())}
 
-*Informações do Sistema:*
-• Sistema: {platform.system()} {platform.release()}
-• Hostname: {platform.node()}
-• Python: {platform.python_version()}
-• Bot Version: 1.0
-
-*Comandos Disponíveis:*
-📌 *Básicos:*
-• /start - Mostra esta mensagem
-• /help - Mostra ajuda detalhada
-• /status - Status do sistema
-
-🛠️ *Terminal:*
-• /cmd <comando> - Executa comando
-Exemplo: `/cmd ls -la`
-
-⚡ *Comandos Rápidos:*
-• Use o menu abaixo para acessar
-
-⚠️ *Segurança:*
-• Todos os comandos são executados como root
-• Todas as ações são registradas
-• {MAX_TENTATIVAS} tentativas falhas = bloqueio
-• Apenas o dono pode desbloquear usuários
-
-*Status do Usuário:*
-• Nome: {update.effective_user.first_name}
+*Usuário:*
+• Nome: {user.first_name}
 • Username: @{username}
 • ID: `{user_id}`
-• Nível: {"👑 Dono" if is_owner(username) else "👤 Autorizado"}
+• Tipo: {"👑 Dono" if username.lower() == DONO_USERNAME else "👤 Autorizado"}
 
-Use os botões abaixo para começar:
+*Comandos:*
+/cmd - Executar comando
+/status - Ver status detalhado
+/processos - Listar processos
+/memoria - Ver uso de memória
+/disco - Ver uso do disco
+/rede - Ver informações de rede
+/ajuda - Mostrar ajuda
+
+⚠️ Este bot tem acesso root ao servidor.
+Use com responsabilidade!
 """
+        
+        # Botões inline
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Status", callback_data="status"),
+                InlineKeyboardButton("💾 Memória", callback_data="memoria")
+            ],
+            [
+                InlineKeyboardButton("💽 Disco", callback_data="disco"),
+                InlineKeyboardButton("🌐 Rede", callback_data="rede")
+            ],
+            [
+                InlineKeyboardButton("📋 Processos", callback_data="processos"),
+                InlineKeyboardButton("❓ Ajuda", callback_data="ajuda")
+            ]
+        ]
+        
+        await update.message.reply_text(
+            status,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao obter status: {e}")
 
-    keyboard = [
-        [InlineKeyboardButton("📊 Status do Sistema", callback_data='status')],
-        [InlineKeyboardButton("⚡ Comandos Rápidos", callback_data='quick_commands')],
-        [InlineKeyboardButton("❓ Ajuda Detalhada", callback_data='help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+async def cmd_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Executa comandos enviados via /cmd"""
+    user = update.effective_user
+    
+    if not verificar_autorizacao(user.id, user.username):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+    
+    # Obter comando após /cmd
+    comando = update.message.text.split(' ', 1)
+    if len(comando) < 2:
+        await update.message.reply_text("⚠️ Use: /cmd <comando>")
+        return
+        
+    comando = comando[1]
+    
+    # Executar comando
+    sucesso, saida = executar_comando(comando)
+    
+    if not saida:
+        saida = "✅ Comando executado (sem saída)"
+    
+    # Formatar resposta
+    resposta = f"✅ Resultado:" if sucesso else "❌ Erro:"
+    resposta += f"\n```\n{saida[:3900]}\n```"  # Limite Telegram
     
     await update.message.reply_text(
-        welcome_message,
-        reply_markup=reply_markup,
+        resposta,
         parse_mode='Markdown'
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /help - Mostra todos os comandos disponíveis"""
-    if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("❌ Desculpe, você não está autorizado a usar este bot.")
+async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra status detalhado do sistema"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
         return
-    
-    help_text = """
-🤖 *Comandos Disponíveis*
+        
+    try:
+        # CPU
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_freq = psutil.cpu_freq()
+        cpu_count = psutil.cpu_count()
+        
+        # Memória
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        
+        # Disco
+        disk = psutil.disk_usage('/')
+        
+        # Sistema
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+        
+        status = f"""
+📊 *Status do Sistema*
 
-Básicos:
-/start - Inicia o bot e mostra o menu principal
-/help - Mostra esta mensagem de ajuda
-/status - Mostra status do sistema
+*CPU:*
+• Uso: {cpu_percent}%
+• Cores: {cpu_count}
+• Freq: {cpu_freq.current:.1f} MHz
+• Min: {cpu_freq.min:.1f} MHz
+• Max: {cpu_freq.max:.1f} MHz
 
-Comandos do Terminal:
-/cmd <comando> - Executa um comando no terminal
-Exemplo: `/cmd ls -la`
+*Memória RAM:*
+• Total: {mem.total / (1024**3):.1f} GB
+• Usada: {mem.used / (1024**3):.1f} GB
+• Livre: {mem.free / (1024**3):.1f} GB
+• Uso: {mem.percent}%
 
-Comandos Rápidos:
-/disk - Mostra uso do disco
-/mem - Mostra uso da memória
-/cpu - Mostra uso da CPU
-/net - Mostra conexões de rede
-/ps - Lista processos ativos
-
-⚠️ *Observações*:
-- Apenas usuários autorizados podem usar o bot
-- Alguns comandos podem levar alguns segundos para responder
-- Use com responsabilidade!
-"""
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /status - Mostra informações do sistema"""
-    if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("❌ Desculpe, você não está autorizado a usar este bot.")
-        return
-    
-    # Coleta informações do sistema
-    cpu_percent = psutil.cpu_percent(interval=1)
-    mem = psutil.virtual_memory()
-    disk = psutil.disk_usage('/')
-    boot_time = datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S")
-    
-    status_text = f"""
-🖥️ *Status do Sistema*
-
-*Sistema:*
-OS: {platform.system()} {platform.release()}
-Uptime desde: {boot_time}
-
-*Recursos:*
-CPU: {cpu_percent}%
-RAM: {mem.percent}% usado
-Disco: {disk.percent}% usado
-
-*Memória:*
-Total: {bytes_to_human(mem.total)}
-Usado: {bytes_to_human(mem.used)}
-Livre: {bytes_to_human(mem.free)}
+*Swap:*
+• Total: {swap.total / (1024**3):.1f} GB
+• Usada: {swap.used / (1024**3):.1f} GB
+• Livre: {swap.free / (1024**3):.1f} GB
+• Uso: {swap.percent}%
 
 *Disco:*
-Total: {bytes_to_human(disk.total)}
-Usado: {bytes_to_human(disk.used)}
-Livre: {bytes_to_human(disk.free)}
-"""
-    await update.message.reply_text(status_text, parse_mode='Markdown')
+• Total: {disk.total / (1024**3):.1f} GB
+• Usado: {disk.used / (1024**3):.1f} GB
+• Livre: {disk.free / (1024**3):.1f} GB
+• Uso: {disk.percent}%
 
-async def quick_commands_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra menu de comandos rápidos"""
-    keyboard = []
-    for comando_nome in COMANDOS_COMUNS.keys():
-        keyboard.append([InlineKeyboardButton(comando_nome, callback_data=f'cmd_{comando_nome}')])
+*Sistema:*
+• OS: {platform.system()} {platform.release()}
+• Python: {platform.python_version()}
+• Boot: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}
+• Uptime: {uptime}
+"""
+        
+        await update.message.reply_text(
+            status,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao obter status: {e}")
+
+async def processos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lista os processos do sistema"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+        
+    try:
+        processos = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                pinfo = proc.info
+                processos.append((
+                    pinfo['cpu_percent'],
+                    pinfo['memory_percent'],
+                    pinfo['pid'],
+                    pinfo['name']
+                ))
+            except:
+                pass
+                
+        # Ordenar por CPU
+        processos.sort(reverse=True)
+        
+        # Pegar top 10
+        resposta = "📋 *Top 10 Processos:*\n\n"
+        for cpu, mem, pid, name in processos[:10]:
+            resposta += f"• {name} (PID: {pid})\n"
+            resposta += f"  CPU: {cpu:.1f}% | RAM: {mem:.1f}%\n\n"
+            
+        await update.message.reply_text(
+            resposta,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao listar processos: {e}")
+
+async def memoria_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra uso detalhado de memória"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+        
+    try:
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        
+        resposta = f"""
+💾 *Uso de Memória*
+
+*RAM:*
+• Total: {mem.total / (1024**3):.1f} GB
+• Disponível: {mem.available / (1024**3):.1f} GB
+• Usada: {mem.used / (1024**3):.1f} GB
+• Livre: {mem.free / (1024**3):.1f} GB
+• Buffers: {mem.buffers / (1024**3):.1f} GB
+• Cache: {mem.cached / (1024**3):.1f} GB
+• Uso: {mem.percent}%
+
+*Swap:*
+• Total: {swap.total / (1024**3):.1f} GB
+• Usada: {swap.used / (1024**3):.1f} GB
+• Livre: {swap.free / (1024**3):.1f} GB
+• Uso: {swap.percent}%
+"""
+        
+        await update.message.reply_text(
+            resposta,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao obter informações de memória: {e}")
+
+async def disco_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra uso detalhado do disco"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+        
+    try:
+        resposta = "💽 *Uso de Disco*\n\n"
+        
+        for particao in psutil.disk_partitions():
+            try:
+                uso = psutil.disk_usage(particao.mountpoint)
+                resposta += f"*{particao.mountpoint}:*\n"
+                resposta += f"• Device: {particao.device}\n"
+                resposta += f"• Total: {uso.total / (1024**3):.1f} GB\n"
+                resposta += f"• Usado: {uso.used / (1024**3):.1f} GB\n"
+                resposta += f"• Livre: {uso.free / (1024**3):.1f} GB\n"
+                resposta += f"• Uso: {uso.percent}%\n"
+                resposta += f"• Tipo: {particao.fstype}\n\n"
+            except:
+                pass
+                
+        await update.message.reply_text(
+            resposta,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao obter informações de disco: {e}")
+
+async def rede_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra informações de rede"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+        
+    try:
+        # Interfaces
+        interfaces = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+        io = psutil.net_io_counters(pernic=True)
+        
+        resposta = "🌐 *Informações de Rede*\n\n"
+        
+        for interface, addrs in interfaces.items():
+            if interface in stats:
+                stat = stats[interface]
+                resposta += f"*{interface}:*\n"
+                
+                # Endereços
+                for addr in addrs:
+                    familia = {
+                        psutil.AF_INET: "IPv4",
+                        psutil.AF_INET6: "IPv6",
+                        psutil.AF_PACKET: "MAC"
+                    }.get(addr.family, addr.family)
+                    
+                    resposta += f"• {familia}: {addr.address}\n"
+                
+                # Status
+                resposta += f"• Ativo: {'✅' if stat.isup else '❌'}\n"
+                resposta += f"• MTU: {stat.mtu}\n"
+                
+                # I/O
+                if interface in io:
+                    net_io = io[interface]
+                    resposta += f"• Download: {net_io.bytes_recv / (1024**2):.1f} MB\n"
+                    resposta += f"• Upload: {net_io.bytes_sent / (1024**2):.1f} MB\n"
+                    
+                resposta += "\n"
+                
+        await update.message.reply_text(
+            resposta,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao obter informações de rede: {e}")
+
+async def ajuda_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra mensagem de ajuda"""
+    if not verificar_autorizacao(update.effective_user.id):
+        await update.message.reply_text("❌ Você não está autorizado!")
+        return
+        
+    ajuda = """
+❓ *Ajuda do BOT-T-Terminal*
+
+*Comandos Disponíveis:*
+
+📌 *Básicos:*
+• /start - Menu principal
+• /ajuda - Mostra esta mensagem
+• /status - Status detalhado
+
+🛠️ *Sistema:*
+• /cmd <comando> - Executa comando
+• /processos - Lista processos
+• /memoria - Uso de memória
+• /disco - Uso do disco
+• /rede - Info de rede
+
+⚠️ *Observações:*
+• Todos os comandos são executados como root
+• Comandos têm timeout de 30 segundos
+• Use com responsabilidade!
+
+*Exemplos:*
+• Ver arquivos: `/cmd ls -la`
+• Processos: `/cmd ps aux`
+• Memória: `/cmd free -h`
+• Rede: `/cmd netstat -tuln`
+• Sistema: `/cmd uname -a`
+
+*Segurança:*
+• Apenas usuários autorizados têm acesso
+• {TENTATIVAS_MAXIMAS} tentativas = bloqueio
+• Somente o dono pode desbloquear
+"""
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "📝 Selecione um comando rápido:",
-        reply_markup=reply_markup
+        ajuda,
+        parse_mode='Markdown'
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manipula callbacks dos botões"""
+    """Processa botões inline"""
     query = update.callback_query
     await query.answer()
     
-    if not is_authorized(query.from_user.id):
-        await query.message.reply_text("❌ Desculpe, você não está autorizado a usar este bot.")
+    if not verificar_autorizacao(query.from_user.id):
+        await query.message.reply_text("❌ Você não está autorizado!")
         return
-    
-    if query.data == 'status':
-        await status_command(query, context)
-    elif query.data == 'quick_commands':
-        await quick_commands_menu(query, context)
-    elif query.data == 'help':
-        await help_command(query, context)
-    elif query.data.startswith('cmd_'):
-        comando_nome = query.data[4:]
-        comando = COMANDOS_COMUNS.get(comando_nome)
-        if comando:
-            context.user_data['command'] = comando
-            await execute_command(query, context)
-
-async def execute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Executa o comando recebido no terminal com privilégios root"""
-    if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("❌ Desculpe, você não está autorizado a usar este bot.")
-        return
-
-    # Obtém o comando
-    if isinstance(update, Update):
-        command = update.message.text[5:].strip()  # Remove '/cmd '
-    else:
-        command = context.user_data.get('command', '')
-
-    if not command:
-        await update.message.reply_text("❌ Por favor, especifique um comando para executar.")
-        return
-
-    try:
-        # Garantir que o comando seja executado como root
-        if os.geteuid() != 0:
-            command = f"sudo {command}"
-
-        # Registrar comando no log do sistema
-        log_command = f"Comando executado via Telegram Bot por ID {update.effective_user.id}: {command}"
-        subprocess.run(['logger', '-t', 'telegram-bot', log_command])
-
-        process = subprocess.Popen(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            preexec_fn=os.setsid  # Criar novo grupo de processo
-        )
         
-        try:
-            stdout, stderr = process.communicate(timeout=60)  # Timeout de 60 segundos
-        except subprocess.TimeoutExpired:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            await update.message.reply_text("⚠️ Comando cancelado: tempo limite excedido (60s)")
-            return
-
-        response = f"🔧 *Comando executado como root:* `{command}`\n\n"
-        if stdout:
-            response += f"📤 *Saída:*\n```\n{stdout[:1500]}```\n"  # Limitar saída
-            if len(stdout) > 1500:
-                response += "\n... (saída truncada) ...\n"
-        if stderr:
-            response += f"⚠️ *Erro:*\n```\n{stderr[:500]}```\n"  # Limitar erros
-            if len(stderr) > 500:
-                response += "\n... (mensagem de erro truncada) ...\n"
-        if not stdout and not stderr:
-            response += "✅ Comando executado sem saída."
-
-        # Divide a resposta se for muito longa
-        if len(response) > 4000:
-            for i in range(0, len(response), 4000):
-                await update.message.reply_text(
-                    response[i:i+4000],
-                    parse_mode='Markdown'
-                )
-        else:
-            await update.message.reply_text(response, parse_mode='Markdown')
-
-    except Exception as e:
-        error_msg = f"❌ Erro ao executar o comando: {str(e)}"
-        await update.message.reply_text(error_msg)
-        # Registrar erro no log do sistema
-        subprocess.run(['logger', '-t', 'telegram-bot', f"Erro: {error_msg}"])
-
-def bytes_to_human(bytes_value):
-    """Converte bytes para formato legível"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes_value < 1024:
-            return f"{bytes_value:.2f} {unit}"
-        bytes_value /= 1024
-    return f"{bytes_value:.2f} PB"
+    comando = query.data
+    
+    if comando == "status":
+        await status_handler(update, context)
+    elif comando == "processos":
+        await processos_handler(update, context)
+    elif comando == "memoria":
+        await memoria_handler(update, context)
+    elif comando == "disco":
+        await disco_handler(update, context)
+    elif comando == "rede":
+        await rede_handler(update, context)
+    elif comando == "ajuda":
+        await ajuda_handler(update, context)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manipula erros do bot"""
+    """Trata erros do bot"""
     print(f"Erro: {context.error}")
-    await update.message.reply_text("❌ Ocorreu um erro ao processar sua solicitação.")
+    try:
+        if update and update.effective_message:
+            await update.effective_message.reply_text(
+                f"❌ Ocorreu um erro: {context.error}"
+            )
+    except:
+        pass
 
 def main():
     """Função principal"""
-    if not USUARIOS_AUTORIZADOS:
-        print("⚠️ AVISO: Nenhum usuário autorizado configurado!")
-        print("Execute o script de instalação (install.py) para configurar o bot.")
-        return
-
-    # Cria o aplicativo
-    app = Application.builder().token(TOKEN).build()
-
-    # Adiciona os handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("cmd", execute_command))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_error_handler(error_handler)
-
-    # Inicia o bot
-    print("🤖 Bot iniciado! Pressione Ctrl+C para parar.")
-    app.run_polling(poll_interval=1)
+    try:
+        # Criar aplicação
+        app = Application.builder().token(TOKEN).build()
+        
+        # Adicionar handlers
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("cmd", cmd_handler))
+        app.add_handler(CommandHandler("status", status_handler))
+        app.add_handler(CommandHandler("processos", processos_handler))
+        app.add_handler(CommandHandler("memoria", memoria_handler))
+        app.add_handler(CommandHandler("disco", disco_handler))
+        app.add_handler(CommandHandler("rede", rede_handler))
+        app.add_handler(CommandHandler("ajuda", ajuda_handler))
+        
+        # Handler para botões
+        app.add_handler(CallbackQueryHandler(button_handler))
+        
+        # Handler de erros
+        app.add_error_handler(error_handler)
+        
+        # Iniciar bot
+        print("🤖 BOT-T-Terminal iniciado!")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        print(f"❌ Erro fatal: {e}")
+        exit(1)
 
 if __name__ == "__main__":
     main() 
