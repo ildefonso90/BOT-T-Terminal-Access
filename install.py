@@ -150,15 +150,37 @@ def verificar_instalacao():
     # Verificar Python3
     python_version = executar_comando("python3 --version")
     if not python_version or python_version.returncode != 0:
-        print_status("Python3 não encontrado! Por favor, instale o Python3.", "error")
-        sys.exit(1)
+        print_status("Python3 não encontrado! Tentando instalar...", "warning")
+        # Tentar instalar Python3
+        methods = [
+            "apt-get update && apt-get install -y python3",
+            "apt update && apt install -y python3",
+            "yum install -y python3",
+            "dnf install -y python3"
+        ]
+        for method in methods:
+            result = executar_comando(method)
+            if result and result.returncode == 0:
+                print_status("Python3 instalado com sucesso!", "success")
+                break
     else:
         print_status(f"Python3 encontrado: {python_version.stdout.strip()}", "success")
     
-    # Tentar diferentes métodos para garantir que temos um gerenciador de pacotes
+    # Verificar Node.js como alternativa
+    node_version = executar_comando("node --version")
+    if node_version and node_version.returncode == 0:
+        print_status(f"Node.js encontrado: {node_version.stdout.strip()}", "success")
+        return "node"
+    
+    # Verificar Go como alternativa
+    go_version = executar_comando("go version")
+    if go_version and go_version.returncode == 0:
+        print_status(f"Go encontrado: {go_version.stdout.strip()}", "success")
+        return "go"
+    
+    # Tentar diferentes métodos para gerenciador de pacotes Python
     print_status("Verificando/Instalando gerenciador de pacotes...", "info")
     
-    # Lista de possíveis comandos para instalar pacotes
     package_managers = [
         ("pip3", "pip3 install"),
         ("pip", "pip install"),
@@ -166,95 +188,148 @@ def verificar_instalacao():
         ("python -m pip", "python -m pip install")
     ]
     
-    install_command = None
     for cmd, install_cmd in package_managers:
         result = executar_comando(f"{cmd} --version")
         if result and result.returncode == 0:
-            install_command = install_cmd
             print_status(f"Usando {cmd} para instalação", "success")
-            break
+            return install_cmd
     
-    if not install_command:
-        print_status("Tentando instalar pip...", "info")
-        # Tentar instalar pip usando diferentes métodos
-        methods = [
-            "apt-get update && apt-get install -y python3-pip",
-            "apt update && apt install -y python3-pip",
-            "yum install -y python3-pip",
-            "dnf install -y python3-pip",
-            "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py"
-        ]
-        
-        for method in methods:
-            print_status(f"Tentando: {method}", "info")
-            result = executar_comando(method)
-            if result and result.returncode == 0:
-                # Verificar se pip foi instalado
-                for cmd, install_cmd in package_managers:
-                    result = executar_comando(f"{cmd} --version")
-                    if result and result.returncode == 0:
-                        install_command = install_cmd
-                        print_status(f"Instalação bem sucedida! Usando {cmd}", "success")
-                        break
-                if install_command:
-                    break
-        
-        if not install_command:
-            print_status("Não foi possível instalar um gerenciador de pacotes!", "error")
-            print_status("Por favor, instale manualmente o pip usando um dos comandos:", "info")
-            print("1. apt-get update && apt-get install -y python3-pip")
-            print("2. curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py")
-            sys.exit(1)
+    # Se não encontrou pip, tentar instalar
+    print_status("Tentando instalar gerenciadores de pacotes...", "info")
     
-    return install_command
-
-def instalar_dependencias(install_command):
-    print_status("\nInstalando dependências...", "info")
-    
-    # Lista de dependências necessárias
-    dependencies = [
-        "python-telegram-bot==20.8",
-        "psutil==5.9.8"
+    # Tentar instalar pip
+    pip_methods = [
+        "apt-get update && apt-get install -y python3-pip",
+        "apt update && apt install -y python3-pip",
+        "yum install -y python3-pip",
+        "dnf install -y python3-pip",
+        "curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3 get-pip.py"
     ]
     
-    # Primeiro, atualizar o próprio pip
-    print_status("Atualizando gerenciador de pacotes...", "info")
-    executar_comando(f"{install_command} --upgrade pip")
+    # Tentar instalar Node.js
+    node_methods = [
+        "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
+        "dnf module install -y nodejs:18/common",
+        "yum install -y nodejs npm"
+    ]
     
-    # Instalar cada dependência individualmente
-    success = True
-    for dep in dependencies:
-        print_status(f"Instalando {dep}...", "info")
+    # Tentar instalar Go
+    go_methods = [
+        "apt-get update && apt-get install -y golang-go",
+        "yum install -y golang",
+        "dnf install -y golang"
+    ]
+    
+    # Tentar todos os métodos
+    for method in pip_methods + node_methods + go_methods:
+        print_status(f"Tentando: {method}", "info")
+        result = executar_comando(method)
+        if result and result.returncode == 0:
+            # Verificar qual foi instalado
+            for cmd, install_cmd in package_managers:
+                if executar_comando(f"{cmd} --version").returncode == 0:
+                    return install_cmd
+            if executar_comando("node --version").returncode == 0:
+                return "node"
+            if executar_comando("go version").returncode == 0:
+                return "go"
+    
+    print_status("Não foi possível instalar nenhum gerenciador de pacotes!", "error")
+    print_status("Por favor, instale manualmente um dos seguintes:", "info")
+    print("1. Python: apt-get update && apt-get install -y python3-pip")
+    print("2. Node.js: curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs")
+    print("3. Go: apt-get update && apt-get install -y golang-go")
+    sys.exit(1)
+
+def instalar_dependencias(install_type):
+    print_status("\nInstalando dependências...", "info")
+    
+    if install_type == "node":
+        # Criar package.json
+        package_json = {
+            "name": "bot-t-terminal",
+            "version": "1.0.0",
+            "dependencies": {
+                "node-telegram-bot-api": "^0.61.0",
+                "systeminformation": "^5.21.7"
+            }
+        }
+        with open('package.json', 'w') as f:
+            json.dump(package_json, f, indent=2)
         
-        # Tentar diferentes métodos de instalação
+        # Instalar dependências Node.js
         methods = [
-            f"{install_command} {dep}",
-            f"{install_command} --no-cache-dir {dep}",
-            f"{install_command} --ignore-installed {dep}",
-            f"{install_command} --user {dep}"
+            "npm install",
+            "npm install --no-package-lock",
+            "npm install --force"
         ]
         
-        installed = False
         for method in methods:
             print_status(f"Tentando: {method}", "info")
             result = executar_comando(method)
             if result and result.returncode == 0:
-                installed = True
-                print_status(f"{dep} instalado com sucesso!", "success")
-                break
+                print_status("Dependências Node.js instaladas com sucesso!", "success")
+                return True
         
-        if not installed:
-            print_status(f"Falha ao instalar {dep}", "error")
-            success = False
-    
-    if not success:
-        print_status("Algumas dependências não puderam ser instaladas.", "error")
-        print_status("Por favor, tente instalar manualmente:", "info")
+    elif install_type == "go":
+        # Criar go.mod
+        executar_comando("go mod init bot-t-terminal")
+        
+        # Instalar dependências Go
+        go_deps = [
+            "go get -u github.com/go-telegram-bot-api/telegram-bot-api/v5",
+            "go get -u github.com/shirou/gopsutil/v3"
+        ]
+        
+        success = True
+        for dep in go_deps:
+            print_status(f"Instalando: {dep}", "info")
+            result = executar_comando(dep)
+            if not result or result.returncode != 0:
+                success = False
+        
+        if success:
+            print_status("Dependências Go instaladas com sucesso!", "success")
+            return True
+            
+    else:  # Python
+        # Lista de dependências Python
+        dependencies = [
+            "python-telegram-bot==20.8",
+            "psutil==5.9.8"
+        ]
+        
+        # Primeiro, atualizar o pip
+        executar_comando(f"{install_type} --upgrade pip")
+        
+        # Instalar cada dependência
+        success = True
         for dep in dependencies:
-            print(f"{install_command} {dep}")
-        sys.exit(1)
-    else:
-        print_status("Todas as dependências foram instaladas com sucesso!", "success")
+            methods = [
+                f"{install_type} {dep}",
+                f"{install_type} --no-cache-dir {dep}",
+                f"{install_type} --ignore-installed {dep}",
+                f"{install_type} --user {dep}"
+            ]
+            
+            installed = False
+            for method in methods:
+                print_status(f"Tentando: {method}", "info")
+                result = executar_comando(method)
+                if result and result.returncode == 0:
+                    installed = True
+                    print_status(f"{dep} instalado com sucesso!", "success")
+                    break
+            
+            if not installed:
+                success = False
+        
+        if success:
+            print_status("Todas as dependências Python instaladas com sucesso!", "success")
+            return True
+    
+    print_status("Falha ao instalar dependências.", "error")
+    return False
 
 def main():
     if os.geteuid() != 0:
@@ -267,11 +342,25 @@ def main():
     print_banner()
     print_status("\nIniciando instalação do BOT-T-Terminal...", "info")
     
-    # Verificar instalação e obter comando de instalação
-    install_command = verificar_instalacao()
+    # Verificar instalação e obter tipo de instalação
+    install_type = verificar_instalacao()
     
     # Instalar dependências
-    instalar_dependencias(install_command)
+    if not instalar_dependencias(install_type):
+        print_status("Tentando métodos alternativos...", "warning")
+        # Se Python falhar, tentar Node.js
+        if install_type.endswith("install"):  # É um comando pip
+            print_status("Tentando com Node.js...", "info")
+            if executar_comando("curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs").returncode == 0:
+                if instalar_dependencias("node"):
+                    install_type = "node"
+        
+        # Se ainda falhar, tentar Go
+        if install_type != "node":
+            print_status("Tentando com Go...", "info")
+            if executar_comando("apt-get update && apt-get install -y golang-go").returncode == 0:
+                if instalar_dependencias("go"):
+                    install_type = "go"
     
     # Configurar bot
     configurar_bot()
