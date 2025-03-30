@@ -3,5 +3,17 @@
     "dono_username": "SEU_USERNAME",
     "ids_autorizados": [],
     "usuarios_bloqueados": [],
-    "tentativas_maximas": 3
+    "tentativas_maximas": 3,
+    "comandos_permitidos": [
+        "ls", "ps", "df", "free",
+        "top", "htop", "uptime",
+        "who", "date", "pwd"
+    ],
+    "comandos_bloqueados": [
+        "rm", "mv", "cp", "chmod",
+        "chown", "dd", "mkfs",
+        "mount", "umount", "sudo"
+    ],
+    "timeout_comando": 30,
+    "log_level": "INFO"
 } 

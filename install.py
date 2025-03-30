@@ -17,6 +17,9 @@ class Cores:
     END = '\033[0m'
     BOLD = '\033[1m'
 
+# Adiciona variável global no início do arquivo, após as importações
+python_executable = "/usr/bin/python3"
+
 def imprimir_banner():
     banner = f"""{Cores.BLUE}
 ╔══════════════════════════════════════════╗
@@ -56,44 +59,42 @@ def is_debian_based():
 def instalar_dependencias():
     print(f"\n{Cores.HEADER}📦 Instalando dependências...{Cores.END}")
     
-    if is_debian_based():
-        print(f"{Cores.GREEN}📌 Sistema baseado em Debian detectado, usando apt...{Cores.END}")
-        try:
-            # Atualiza os repositórios
-            subprocess.run(["apt", "update"], check=True)
-            
-            # Instala as dependências via apt
-            subprocess.run([
-                "apt", "install", "-y",
-                "python3-psutil",
-                "python3-telegram-bot"
-            ], check=True)
-            
-            print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso via apt{Cores.END}")
-            return True
-            
-        except subprocess.CalledProcessError as e:
-            print(f"{Cores.FAIL}❌ Erro ao instalar dependências via apt: {e}{Cores.END}")
-            return False
-    else:
-        print(f"{Cores.GREEN}📌 Usando pip para instalar dependências...{Cores.END}")
-        try:
-            # Atualiza pip
-            subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=True)
-            
-            # Instala as dependências via pip
-            subprocess.run([
-                sys.executable, "-m", "pip", "install",
-                "python-telegram-bot==20.8",
-                "psutil==5.9.8"
-            ], check=True)
-            
-            print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso via pip{Cores.END}")
-            return True
-            
-        except subprocess.CalledProcessError as e:
-            print(f"{Cores.FAIL}❌ Erro ao instalar dependências via pip: {e}{Cores.END}")
-            return False
+    try:
+        # Instala python3-venv e python3-pip
+        print(f"{Cores.BLUE}📌 Instalando requisitos básicos...{Cores.END}")
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "-y", "python3-venv", "python3-pip", "python3-psutil"], check=True)
+        
+        # Cria e ativa ambiente virtual
+        venv_path = os.path.join(os.getcwd(), "venv")
+        print(f"{Cores.BLUE}📌 Criando ambiente virtual em {venv_path}...{Cores.END}")
+        subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
+        
+        # Paths do ambiente virtual
+        pip_path = os.path.join(venv_path, "bin", "pip")
+        python_path = os.path.join(venv_path, "bin", "python")
+        
+        # Atualiza pip no ambiente virtual
+        print(f"{Cores.BLUE}📌 Atualizando pip...{Cores.END}")
+        subprocess.run([pip_path, "install", "--upgrade", "pip"], check=True)
+        
+        # Instala as dependências no ambiente virtual
+        print(f"{Cores.BLUE}📌 Instalando dependências Python...{Cores.END}")
+        subprocess.run([
+            pip_path, "install",
+            "python-telegram-bot==20.8"
+        ], check=True)
+        
+        # Atualiza o serviço para usar o Python do ambiente virtual
+        global python_executable
+        python_executable = python_path
+        
+        print(f"{Cores.GREEN}✅ Dependências instaladas com sucesso!{Cores.END}")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"{Cores.FAIL}❌ Erro ao instalar dependências: {e}{Cores.END}")
+        return False
 
 def configurar_bot():
     print(f"\n{Cores.HEADER}⚙️ Configurando o bot...{Cores.END}")
@@ -101,15 +102,12 @@ def configurar_bot():
     config = {
         "token": "",
         "dono_username": "",
-        "ids_autorizados": [],
-        "usuarios_bloqueados": [],
-        "tentativas_maximas": 3
+        "ids_autorizados": []
     }
     
     # Solicita o token
     while not config["token"]:
-        print(f"{Cores.BLUE}🔑 Digite o token do bot (obtido do @BotFather): {Cores.END}")
-        token = input().strip()
+        token = input(f"{Cores.BLUE}🔑 Digite o token do bot (obtido do @BotFather): {Cores.END}").strip()
         if token:
             config["token"] = token
         else:
@@ -117,8 +115,7 @@ def configurar_bot():
     
     # Solicita o username
     while not config["dono_username"]:
-        print(f"{Cores.BLUE}👤 Digite seu username do Telegram (sem @): {Cores.END}")
-        username = input().strip()
+        username = input(f"{Cores.BLUE}👤 Digite seu username do Telegram (sem @): {Cores.END}").strip()
         if username:
             config["dono_username"] = username.lower()
         else:
@@ -127,8 +124,7 @@ def configurar_bot():
     # Solicita o ID
     while not config["ids_autorizados"]:
         try:
-            print(f"{Cores.BLUE}🆔 Digite seu ID do Telegram (use @userinfobot para descobrir): {Cores.END}")
-            id_telegram = int(input().strip())
+            id_telegram = int(input(f"{Cores.BLUE}🆔 Digite seu ID do Telegram (use @userinfobot para descobrir): {Cores.END}").strip())
             config["ids_autorizados"].append(id_telegram)
         except ValueError:
             print(f"{Cores.FAIL}❌ ID inválido! Digite apenas números.{Cores.END}")
@@ -138,6 +134,7 @@ def configurar_bot():
         json.dump(config, f, indent=4)
     
     print(f"{Cores.GREEN}✅ Configuração salva com sucesso!{Cores.END}")
+    print(f"{Cores.BLUE}ℹ️ Suas credenciais foram salvas em config.json{Cores.END}")
 
 def criar_servico():
     print(f"\n{Cores.HEADER}🛠️ Criando serviço systemd...{Cores.END}")
@@ -150,7 +147,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={os.getcwd()}
-ExecStart=/usr/bin/python3 {os.path.join(os.getcwd(), "telegram_terminal_bot.py")}
+Environment="PYTHONPATH={os.getcwd()}/venv/lib/python3.*/site-packages"
+ExecStart={python_executable} {os.path.join(os.getcwd(), "telegram_terminal_bot.py")}
 Restart=always
 RestartSec=10
 
@@ -204,6 +202,12 @@ def criar_alias():
         print(f'alias bot="sudo python3 {script_path} menu"')
 
 def menu_interativo():
+    # Verifica se o ambiente virtual existe
+    venv_path = os.path.join(os.getcwd(), "venv")
+    if not os.path.exists(venv_path):
+        print(f"{Cores.FAIL}❌ Ambiente virtual não encontrado. Execute a instalação primeiro.{Cores.END}")
+        return
+
     while True:
         print(f"""\n{Cores.HEADER}🤖 BOT-T-Terminal - Menu{Cores.END}
 
@@ -222,27 +226,34 @@ def menu_interativo():
             
             if opcao == "1":
                 subprocess.run(["systemctl", "start", "telegram-terminal-bot"])
+                print(f"{Cores.GREEN}✅ Bot iniciado!{Cores.END}")
             elif opcao == "2":
                 subprocess.run(["systemctl", "stop", "telegram-terminal-bot"])
+                print(f"{Cores.GREEN}✅ Bot parado!{Cores.END}")
             elif opcao == "3":
                 subprocess.run(["systemctl", "restart", "telegram-terminal-bot"])
+                print(f"{Cores.GREEN}✅ Bot reiniciado!{Cores.END}")
             elif opcao == "4":
                 subprocess.run(["systemctl", "status", "telegram-terminal-bot"])
             elif opcao == "5":
-                subprocess.run(["journalctl", "-u", "telegram-terminal-bot", "-f"])
+                try:
+                    subprocess.run(["journalctl", "-u", "telegram-terminal-bot", "-f"])
+                except KeyboardInterrupt:
+                    print(f"\n{Cores.BLUE}ℹ️ Monitoramento de logs interrompido{Cores.END}")
             elif opcao == "6":
                 gerenciar_usuarios()
             elif opcao == "7":
                 configurar_bot()
                 subprocess.run(["systemctl", "restart", "telegram-terminal-bot"])
+                print(f"{Cores.GREEN}✅ Configuração atualizada e bot reiniciado!{Cores.END}")
             elif opcao == "8":
                 print(f"{Cores.GREEN}👋 Até logo!{Cores.END}")
                 break
             else:
-                print(f"{Cores.WARNING}⚠️ Opção inválida{Cores.END}")
+                print(f"{Cores.WARNING}⚠️ Opção inválida!{Cores.END}")
                 
         except KeyboardInterrupt:
-            print(f"\n{Cores.WARNING}⚠️ Instalação cancelada{Cores.END}")
+            print(f"\n{Cores.WARNING}⚠️ Operação cancelada{Cores.END}")
             break
         except Exception as e:
             print(f"\n{Cores.FAIL}❌ Erro: {e}{Cores.END}")

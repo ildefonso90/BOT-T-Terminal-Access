@@ -10,6 +10,15 @@ from datetime import datetime
 from typing import List, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+import logging
+import asyncio
+
+# Configuração de logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 def verificar_root():
     """Verifica se o script está sendo executado como root"""
@@ -23,12 +32,12 @@ verificar_root()
 # Carregar configurações
 try:
     with open('config.json', 'r') as f:
-        config = json.load(f)
-        TOKEN = config['token']
-        DONO_USERNAME = config['dono_username'].lower()
-        IDS_AUTORIZADOS = config['ids_autorizados']
-        USUARIOS_BLOQUEADOS = config.get('usuarios_bloqueados', [])
-        TENTATIVAS_MAXIMAS = config.get('tentativas_maximas', 3)
+        CONFIG = json.load(f)
+        TOKEN = CONFIG['token']
+        DONO_USERNAME = CONFIG['dono_username'].lower()
+        IDS_AUTORIZADOS = CONFIG['ids_autorizados']
+        USUARIOS_BLOQUEADOS = CONFIG.get('usuarios_bloqueados', [])
+        TENTATIVAS_MAXIMAS = CONFIG.get('tentativas_maximas', 3)
 except Exception as e:
     print(f"❌ Erro ao carregar configurações: {e}")
     print("⚠️ Execute o script de instalação (install.py) primeiro!")
@@ -53,18 +62,18 @@ def salvar_configuracoes():
         print(f"❌ Erro ao salvar configurações: {e}")
         return False
 
-def verificar_autorizacao(user_id: int, username: str = None) -> bool:
+async def verificar_autorizacao(update: Update) -> bool:
     """Verifica se o usuário está autorizado"""
-    # Verificar se está bloqueado
-    if user_id in USUARIOS_BLOQUEADOS:
-        return False
-    
-    # Verificar se é o dono
-    if username and username.lower() == DONO_USERNAME:
+    user_id = update.effective_user.id
+    username = update.effective_user.username.lower() if update.effective_user.username else None
+
+    # Verifica se é o dono ou está autorizado
+    if username == DONO_USERNAME or user_id in IDS_AUTORIZADOS:
         return True
-    
-    # Verificar se está autorizado
-    return user_id in IDS_AUTORIZADOS
+
+    logger.warning(f"Tentativa de acesso não autorizado - ID: {user_id}, Username: {username}")
+    await update.message.reply_text("❌ Você não está autorizado!")
+    return False
 
 def registrar_tentativa_falha(user_id: int):
     """Registra uma tentativa falha de acesso"""
@@ -79,436 +88,221 @@ def registrar_tentativa_falha(user_id: int):
             USUARIOS_BLOQUEADOS.append(user_id)
             salvar_configuracoes()
 
-def executar_comando(comando: str) -> tuple:
-    """Executa um comando e retorna (sucesso, saída)"""
+async def executar_comando(comando: str) -> str:
+    """Executa um comando no sistema"""
     try:
-        processo = subprocess.Popen(
+        processo = await asyncio.create_subprocess_shell(
             comando,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
+        stdout, stderr = await processo.communicate()
         
-        try:
-            stdout, stderr = processo.communicate(timeout=30)
-            sucesso = processo.returncode == 0
-            saida = stdout if sucesso else stderr
-            return sucesso, saida.strip()
-        except subprocess.TimeoutExpired:
-            processo.kill()
-            return False, "⚠️ Comando excedeu o tempo limite de 30 segundos"
-            
-    except Exception as e:
-        return False, f"❌ Erro ao executar comando: {str(e)}"
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start - Mostra menu principal"""
-    user = update.effective_user
-    user_id = user.id
-    username = user.username
-
-    if not username:
-        await update.message.reply_text(
-            "❌ Você precisa ter um username configurado no Telegram para usar este bot."
-        )
-        return
-
-    # Verificar autorização
-    if not verificar_autorizacao(user_id, username):
-        registrar_tentativa_falha(user_id)
+        if processo.returncode != 0 and stderr:
+            return f"❌ Erro:\n{stderr.decode()}"
         
-        if user_id in USUARIOS_BLOQUEADOS:
-            await update.message.reply_text(
-                "🚫 Você está bloqueado! Entre em contato com o administrador."
-            )
-        else:
-            tentativas = tentativas_falhas.get(user_id, 0)
-            await update.message.reply_text(
-                f"❌ Acesso não autorizado!\n"
-                f"Tentativas restantes: {TENTATIVAS_MAXIMAS - tentativas}"
-            )
-        return
-
-    # Obter informações do sistema
-    try:
-        cpu_percent = psutil.cpu_percent(interval=1)
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        status = f"""
-🤖 *BOT-T-Terminal*
-
-*Sistema:*
-• OS: {platform.system()} {platform.release()}
-• CPU: {cpu_percent}%
-• RAM: {mem.percent}%
-• Disco: {disk.percent}%
-• Uptime: {datetime.now() - datetime.fromtimestamp(psutil.boot_time())}
-
-*Usuário:*
-• Nome: {user.first_name}
-• Username: @{username}
-• ID: `{user_id}`
-• Tipo: {"👑 Dono" if username.lower() == DONO_USERNAME else "👤 Autorizado"}
-
-*Comandos:*
-/cmd - Executar comando
-/status - Ver status detalhado
-/processos - Listar processos
-/memoria - Ver uso de memória
-/disco - Ver uso do disco
-/rede - Ver informações de rede
-/ajuda - Mostrar ajuda
-
-⚠️ Este bot tem acesso root ao servidor.
-Use com responsabilidade!
-"""
-        
-        # Botões inline
-        keyboard = [
-            [
-                InlineKeyboardButton("📊 Status", callback_data="status"),
-                InlineKeyboardButton("💾 Memória", callback_data="memoria")
-            ],
-            [
-                InlineKeyboardButton("💽 Disco", callback_data="disco"),
-                InlineKeyboardButton("🌐 Rede", callback_data="rede")
-            ],
-            [
-                InlineKeyboardButton("📋 Processos", callback_data="processos"),
-                InlineKeyboardButton("❓ Ajuda", callback_data="ajuda")
-            ]
-        ]
-        
-        await update.message.reply_text(
-            status,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
+        resultado = stdout.decode()
+        return resultado if resultado else "✅ Comando executado com sucesso!"
         
     except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao obter status: {e}")
+        return f"❌ Erro: {str(e)}"
+
+def verificar_comando_permitido(comando: str) -> bool:
+    """Verifica se o comando é permitido"""
+    comando_base = comando.split()[0]
+    
+    if comando_base in CONFIG.get("comandos_bloqueados", []):
+        return False
+        
+    if CONFIG.get("comandos_permitidos"):
+        return comando_base in CONFIG["comandos_permitidos"]
+        
+    return True
 
 async def cmd_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Executa comandos enviados via /cmd"""
-    user = update.effective_user
-    
-    if not verificar_autorizacao(user.id, user.username):
-        await update.message.reply_text("❌ Você não está autorizado!")
+    """Executa comandos no servidor"""
+    if not await verificar_autorizacao(update):
         return
-    
-    # Obter comando após /cmd
-    comando = update.message.text.split(' ', 1)
-    if len(comando) < 2:
-        await update.message.reply_text("⚠️ Use: /cmd <comando>")
+
+    if not context.args:
+        await update.message.reply_text(
+            "ℹ️ Use: /cmd <comando>\n"
+            "Exemplo: /cmd ls -la"
+        )
         return
-        
-    comando = comando[1]
+
+    comando = " ".join(context.args)
     
-    # Executar comando
-    sucesso, saida = executar_comando(comando)
+    if not verificar_comando_permitido(comando):
+        await update.message.reply_text("❌ Comando não permitido!")
+        return
+
+    resultado = await executar_comando(comando)
     
-    if not saida:
-        saida = "✅ Comando executado (sem saída)"
-    
-    # Formatar resposta
-    resposta = f"✅ Resultado:" if sucesso else "❌ Erro:"
-    resposta += f"\n```\n{saida[:3900]}\n```"  # Limite Telegram
-    
+    # Divide a resposta se for muito grande
+    if len(resultado) > 4000:
+        partes = [resultado[i:i+4000] for i in range(0, len(resultado), 4000)]
+        for parte in partes:
+            await update.message.reply_text(f"```\n{parte}\n```", parse_mode="MarkdownV2")
+    else:
+        await update.message.reply_text(f"```\n{resultado}\n```", parse_mode="MarkdownV2")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
+    if not await verificar_autorizacao(update):
+        return
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📊 Status", callback_data="status"),
+            InlineKeyboardButton("💾 Memória", callback_data="memoria")
+        ],
+        [
+            InlineKeyboardButton("💿 Disco", callback_data="disco"),
+            InlineKeyboardButton("🌐 Rede", callback_data="rede")
+        ],
+        [
+            InlineKeyboardButton("📝 Processos", callback_data="processos"),
+            InlineKeyboardButton("ℹ️ Ajuda", callback_data="ajuda")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
-        resposta,
-        parse_mode='Markdown'
-    )
-
-async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra status detalhado do sistema"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    try:
-        # CPU
-        cpu_percent = psutil.cpu_percent(interval=1)
-        cpu_freq = psutil.cpu_freq()
-        cpu_count = psutil.cpu_count()
-        
-        # Memória
-        mem = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        
-        # Disco
-        disk = psutil.disk_usage('/')
-        
-        # Sistema
-        boot_time = datetime.fromtimestamp(psutil.boot_time())
-        uptime = datetime.now() - boot_time
-        
-        status = f"""
-📊 *Status do Sistema*
-
-*CPU:*
-• Uso: {cpu_percent}%
-• Cores: {cpu_count}
-• Freq: {cpu_freq.current:.1f} MHz
-• Min: {cpu_freq.min:.1f} MHz
-• Max: {cpu_freq.max:.1f} MHz
-
-*Memória RAM:*
-• Total: {mem.total / (1024**3):.1f} GB
-• Usada: {mem.used / (1024**3):.1f} GB
-• Livre: {mem.free / (1024**3):.1f} GB
-• Uso: {mem.percent}%
-
-*Swap:*
-• Total: {swap.total / (1024**3):.1f} GB
-• Usada: {swap.used / (1024**3):.1f} GB
-• Livre: {swap.free / (1024**3):.1f} GB
-• Uso: {swap.percent}%
-
-*Disco:*
-• Total: {disk.total / (1024**3):.1f} GB
-• Usado: {disk.used / (1024**3):.1f} GB
-• Livre: {disk.free / (1024**3):.1f} GB
-• Uso: {disk.percent}%
-
-*Sistema:*
-• OS: {platform.system()} {platform.release()}
-• Python: {platform.python_version()}
-• Boot: {boot_time.strftime('%Y-%m-%d %H:%M:%S')}
-• Uptime: {uptime}
-"""
-        
-        await update.message.reply_text(
-            status,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao obter status: {e}")
-
-async def processos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista os processos do sistema"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    try:
-        processos = []
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
-            try:
-                pinfo = proc.info
-                processos.append((
-                    pinfo['cpu_percent'],
-                    pinfo['memory_percent'],
-                    pinfo['pid'],
-                    pinfo['name']
-                ))
-            except:
-                pass
-                
-        # Ordenar por CPU
-        processos.sort(reverse=True)
-        
-        # Pegar top 10
-        resposta = "📋 *Top 10 Processos:*\n\n"
-        for cpu, mem, pid, name in processos[:10]:
-            resposta += f"• {name} (PID: {pid})\n"
-            resposta += f"  CPU: {cpu:.1f}% | RAM: {mem:.1f}%\n\n"
-            
-        await update.message.reply_text(
-            resposta,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao listar processos: {e}")
-
-async def memoria_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra uso detalhado de memória"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    try:
-        mem = psutil.virtual_memory()
-        swap = psutil.swap_memory()
-        
-        resposta = f"""
-💾 *Uso de Memória*
-
-*RAM:*
-• Total: {mem.total / (1024**3):.1f} GB
-• Disponível: {mem.available / (1024**3):.1f} GB
-• Usada: {mem.used / (1024**3):.1f} GB
-• Livre: {mem.free / (1024**3):.1f} GB
-• Buffers: {mem.buffers / (1024**3):.1f} GB
-• Cache: {mem.cached / (1024**3):.1f} GB
-• Uso: {mem.percent}%
-
-*Swap:*
-• Total: {swap.total / (1024**3):.1f} GB
-• Usada: {swap.used / (1024**3):.1f} GB
-• Livre: {swap.free / (1024**3):.1f} GB
-• Uso: {swap.percent}%
-"""
-        
-        await update.message.reply_text(
-            resposta,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao obter informações de memória: {e}")
-
-async def disco_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra uso detalhado do disco"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    try:
-        resposta = "💽 *Uso de Disco*\n\n"
-        
-        for particao in psutil.disk_partitions():
-            try:
-                uso = psutil.disk_usage(particao.mountpoint)
-                resposta += f"*{particao.mountpoint}:*\n"
-                resposta += f"• Device: {particao.device}\n"
-                resposta += f"• Total: {uso.total / (1024**3):.1f} GB\n"
-                resposta += f"• Usado: {uso.used / (1024**3):.1f} GB\n"
-                resposta += f"• Livre: {uso.free / (1024**3):.1f} GB\n"
-                resposta += f"• Uso: {uso.percent}%\n"
-                resposta += f"• Tipo: {particao.fstype}\n\n"
-            except:
-                pass
-                
-        await update.message.reply_text(
-            resposta,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao obter informações de disco: {e}")
-
-async def rede_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra informações de rede"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    try:
-        # Interfaces
-        interfaces = psutil.net_if_addrs()
-        stats = psutil.net_if_stats()
-        io = psutil.net_io_counters(pernic=True)
-        
-        resposta = "🌐 *Informações de Rede*\n\n"
-        
-        for interface, addrs in interfaces.items():
-            if interface in stats:
-                stat = stats[interface]
-                resposta += f"*{interface}:*\n"
-                
-                # Endereços
-                for addr in addrs:
-                    familia = {
-                        psutil.AF_INET: "IPv4",
-                        psutil.AF_INET6: "IPv6",
-                        psutil.AF_PACKET: "MAC"
-                    }.get(addr.family, addr.family)
-                    
-                    resposta += f"• {familia}: {addr.address}\n"
-                
-                # Status
-                resposta += f"• Ativo: {'✅' if stat.isup else '❌'}\n"
-                resposta += f"• MTU: {stat.mtu}\n"
-                
-                # I/O
-                if interface in io:
-                    net_io = io[interface]
-                    resposta += f"• Download: {net_io.bytes_recv / (1024**2):.1f} MB\n"
-                    resposta += f"• Upload: {net_io.bytes_sent / (1024**2):.1f} MB\n"
-                    
-                resposta += "\n"
-                
-        await update.message.reply_text(
-            resposta,
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        await update.message.reply_text(f"❌ Erro ao obter informações de rede: {e}")
-
-async def ajuda_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mostra mensagem de ajuda"""
-    if not verificar_autorizacao(update.effective_user.id):
-        await update.message.reply_text("❌ Você não está autorizado!")
-        return
-        
-    ajuda = """
-❓ *Ajuda do BOT-T-Terminal*
-
-*Comandos Disponíveis:*
-
-📌 *Básicos:*
-• /start - Menu principal
-• /ajuda - Mostra esta mensagem
-• /status - Status detalhado
-
-🛠️ *Sistema:*
-• /cmd <comando> - Executa comando
-• /processos - Lista processos
-• /memoria - Uso de memória
-• /disco - Uso do disco
-• /rede - Info de rede
-
-⚠️ *Observações:*
-• Todos os comandos são executados como root
-• Comandos têm timeout de 30 segundos
-• Use com responsabilidade!
-
-*Exemplos:*
-• Ver arquivos: `/cmd ls -la`
-• Processos: `/cmd ps aux`
-• Memória: `/cmd free -h`
-• Rede: `/cmd netstat -tuln`
-• Sistema: `/cmd uname -a`
-
-*Segurança:*
-• Apenas usuários autorizados têm acesso
-• {TENTATIVAS_MAXIMAS} tentativas = bloqueio
-• Somente o dono pode desbloquear
-"""
-    
-    await update.message.reply_text(
-        ajuda,
-        parse_mode='Markdown'
+        "🤖 *BOT\\-T\\-Terminal*\n"
+        "Controle remoto do servidor via Telegram\n\n"
+        "Escolha uma opção:",
+        reply_markup=reply_markup,
+        parse_mode="MarkdownV2"
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa botões inline"""
+    """Manipula callbacks dos botões"""
+    if not await verificar_autorizacao(update):
+        return
+
     query = update.callback_query
     await query.answer()
-    
-    if not verificar_autorizacao(query.from_user.id):
-        await query.message.reply_text("❌ Você não está autorizado!")
-        return
+
+    if query.data == "status":
+        # Informações do sistema
+        cpu = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory()
+        disco = psutil.disk_usage('/')
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+
+        status = (
+            "📊 *Status do Servidor*\n\n"
+            f"CPU: {cpu}%\n"
+            f"RAM: {mem.percent}%\n"
+            f"Disco: {disco.percent}%\n"
+            f"Uptime: {uptime.days}d {uptime.seconds//3600}h"
+        )
         
-    comando = query.data
-    
-    if comando == "status":
-        await status_handler(update, context)
-    elif comando == "processos":
-        await processos_handler(update, context)
-    elif comando == "memoria":
-        await memoria_handler(update, context)
-    elif comando == "disco":
-        await disco_handler(update, context)
-    elif comando == "rede":
-        await rede_handler(update, context)
-    elif comando == "ajuda":
-        await ajuda_handler(update, context)
+        await query.edit_message_text(
+            text=status,
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "memoria":
+        # Informações de memória
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+
+        memoria = (
+            "💾 *Memória*\n\n"
+            f"RAM Total: {mem.total/1024/1024/1024:.1f}GB\n"
+            f"RAM Usada: {mem.used/1024/1024/1024:.1f}GB\n"
+            f"RAM Livre: {mem.free/1024/1024/1024:.1f}GB\n"
+            f"RAM Cache: {mem.cached/1024/1024/1024:.1f}GB\n\n"
+            f"Swap Total: {swap.total/1024/1024/1024:.1f}GB\n"
+            f"Swap Usada: {swap.used/1024/1024/1024:.1f}GB\n"
+            f"Swap Livre: {swap.free/1024/1024/1024:.1f}GB"
+        )
+
+        await query.edit_message_text(
+            text=memoria,
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "disco":
+        # Informações de disco
+        discos = []
+        for particao in psutil.disk_partitions():
+            try:
+                uso = psutil.disk_usage(particao.mountpoint)
+                discos.append(
+                    f"📁 {particao.mountpoint}\n"
+                    f"Total: {uso.total/1024/1024/1024:.1f}GB\n"
+                    f"Usado: {uso.used/1024/1024/1024:.1f}GB\n"
+                    f"Livre: {uso.free/1024/1024/1024:.1f}GB\n"
+                    f"Uso: {uso.percent}%\n"
+                )
+            except:
+                continue
+
+        await query.edit_message_text(
+            text="💿 *Discos*\n\n" + "\n".join(discos),
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "rede":
+        # Informações de rede
+        rede = psutil.net_io_counters()
+        
+        info_rede = (
+            "🌐 *Rede*\n\n"
+            f"Download: {rede.bytes_recv/1024/1024:.1f}MB\n"
+            f"Upload: {rede.bytes_sent/1024/1024:.1f}MB\n"
+            f"Pacotes Recebidos: {rede.packets_recv}\n"
+            f"Pacotes Enviados: {rede.packets_sent}\n"
+            f"Erros (IN): {rede.errin}\n"
+            f"Erros (OUT): {rede.errout}"
+        )
+
+        await query.edit_message_text(
+            text=info_rede,
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "processos":
+        # Lista de processos
+        processos = []
+        for proc in sorted(
+            psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']),
+            key=lambda p: p.info['cpu_percent'],
+            reverse=True
+        )[:10]:
+            try:
+                processos.append(
+                    f"PID: {proc.info['pid']}\n"
+                    f"Nome: {proc.info['name']}\n"
+                    f"CPU: {proc.info['cpu_percent']}%\n"
+                    f"RAM: {proc.info['memory_percent']:.1f}%\n"
+                )
+            except:
+                continue
+
+        await query.edit_message_text(
+            text="📝 *Top 10 Processos*\n\n" + "\n".join(processos),
+            parse_mode="MarkdownV2"
+        )
+
+    elif query.data == "ajuda":
+        ajuda = (
+            "ℹ️ *Comandos Disponíveis*\n\n"
+            "/start \\- Menu principal\n"
+            "/cmd \\- Executa comando\n"
+            "Exemplo: `/cmd ls -la`\n\n"
+            "Use /cmd seguido do comando que deseja executar\\.\n"
+            "O bot tem acesso root ao sistema\\."
+        )
+
+        await query.edit_message_text(
+            text=ajuda,
+            parse_mode="MarkdownV2"
+        )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Trata erros do bot"""
@@ -530,12 +324,6 @@ def main():
         # Adicionar handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("cmd", cmd_handler))
-        app.add_handler(CommandHandler("status", status_handler))
-        app.add_handler(CommandHandler("processos", processos_handler))
-        app.add_handler(CommandHandler("memoria", memoria_handler))
-        app.add_handler(CommandHandler("disco", disco_handler))
-        app.add_handler(CommandHandler("rede", rede_handler))
-        app.add_handler(CommandHandler("ajuda", ajuda_handler))
         
         # Handler para botões
         app.add_handler(CallbackQueryHandler(button_handler))
@@ -544,7 +332,7 @@ def main():
         app.add_error_handler(error_handler)
         
         # Iniciar bot
-        print("🤖 BOT-T-Terminal iniciado!")
+        logger.info("🚀 Bot iniciado!")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
